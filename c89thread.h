@@ -38,7 +38,10 @@ define it.
 
 Sometimes c89thread will need to allocate memory internally. You can set a custom allocator at the
 global level with `c89thread_set_allocation_callbacks()`. This is not thread safe, but can be called
-from any thread so long as you do your own synchronization.
+from any thread so long as you do your own synchronization. Threads can be created with an extended
+function called `c89thrd_create_ex()` which takes a pointer to a structure containing custom allocation
+callbacks which will be used instead of the global callbacks if specified. This function is specific to
+c89thread and is not usable if you require strict C11 compatibility.
 
 This is still work-in-progress and not much testing has been done. Use at your own risk.
 */
@@ -124,6 +127,7 @@ typedef pthread_t           c89thrd_t;
 
 typedef int (* c89thrd_start_t)(void*);
 
+int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89thread_allocation_callbacks* pAllocationCallbacks);
 int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg);
 int c89thrd_equal(c89thrd_t lhs, c89thrd_t rhs);
 c89thrd_t c89thrd_current(void);
@@ -290,6 +294,8 @@ typedef struct
 {
     c89thrd_start_t func;
     void* arg;
+    c89thread_allocation_callbacks allocationCallbacks;
+    int usingCustomAllocator;
 } c89thrd_start_data_win32;
 
 static unsigned long WINAPI c89thrd_start_win32(void* pUserData)
@@ -303,12 +309,12 @@ static unsigned long WINAPI c89thrd_start_win32(void* pUserData)
     arg  = pStartData->arg;
 
     /* We should free the data pointer before entering into the start function. That way when c89thrd_exit() is called we don't leak. */
-    c89thread_free(pStartData, c89thread_allocation_type_general, NULL);
+    c89thread_free(pStartData, c89thread_allocation_type_general, (pStartData->usingCustomAllocator) ? NULL : &pStartData->allocationCallbacks);
 
     return (unsigned long)func(arg);
 }
 
-int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
+int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89thread_allocation_callbacks* pAllocationCallbacks)
 {
     HANDLE hThread;
     c89thrd_start_data_win32* pData;    /* <-- Needs to be allocated on the heap to ensure the data doesn't get trashed before the thread is entered. */
@@ -323,7 +329,7 @@ int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
         return c89thrd_error;
     }
 
-    pData = c89thread_malloc(sizeof(*pData), c89thread_allocation_type_general, NULL);   /* <-- This will be freed when c89thrd_start_win32() is entered. */
+    pData = c89thread_malloc(sizeof(*pData), c89thread_allocation_type_general, pAllocationCallbacks);   /* <-- This will be freed when c89thrd_start_win32() is entered. */
     if (pData == NULL) {
         return c89thrd_nomem;
     }
@@ -331,16 +337,31 @@ int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
     pData->func = func;
     pData->arg  = arg;
 
+    if (pAllocationCallbacks != NULL) {
+        pData->allocationCallbacks  = *pAllocationCallbacks;
+        pData->usingCustomAllocator = 1;
+    } else {
+        pData->allocationCallbacks.onMalloc  = NULL;
+        pData->allocationCallbacks.onFree    = NULL;
+        pData->allocationCallbacks.pUserData = NULL;
+        pData->usingCustomAllocator = 0;
+    }
+
     hThread = CreateThread(NULL, 0, c89thrd_start_win32, pData, 0, NULL);
     if (hThread == NULL) {
-        c89thread_free(pData, c89thread_allocation_type_general, NULL);
+        c89thread_free(pData, c89thread_allocation_type_general, pAllocationCallbacks);
         return c89thrd_result_from_GetLastError(GetLastError());
     }
 
     *thr = (c89thrd_t)hThread;
 
     return c89thrd_success;
-} 
+}
+
+int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
+{
+    return c89thrd_create_ex(thr, func, arg, NULL);
+}
 
 int c89thrd_equal(c89thrd_t lhs, c89thrd_t rhs)
 {
@@ -926,6 +947,8 @@ typedef struct
 {
     c89thrd_start_t func;
     void* arg;
+    c89thread_allocation_callbacks allocationCallbacks;
+    int usingCustomAllocator;
 } c89thrd_start_data_posix;
 
 static void* c89thrd_start_posix(void* pUserData)
@@ -939,12 +962,12 @@ static void* c89thrd_start_posix(void* pUserData)
     arg  = pStartData->arg;
 
     /* We should free the data pointer before entering into the start function. That way when c89thrd_exit() is called we don't leak. */
-    c89thread_free(pStartData, c89thread_allocation_type_general, NULL);
+    c89thread_free(pStartData, c89thread_allocation_type_general, (pStartData->usingCustomAllocator) ? NULL : &pStartData->allocationCallbacks);
 
     return (void*)(c89thread_intptr)func(arg);
 }
 
-int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
+int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89thread_allocation_callbacks* pAllocationCallbacks)
 {
     int result;
     c89thrd_start_data_posix* pData;
@@ -960,7 +983,7 @@ int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
         return c89thrd_error;
     }
 
-    pData = c89thread_malloc(sizeof(*pData), c89thread_allocation_type_general, NULL);   /* <-- This will be freed when c89thrd_start_posix() is entered. */
+    pData = c89thread_malloc(sizeof(*pData), c89thread_allocation_type_general, pAllocationCallbacks);   /* <-- This will be freed when c89thrd_start_posix() is entered. */
     if (pData == NULL) {
         return c89thrd_nomem;
     }
@@ -968,15 +991,30 @@ int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
     pData->func = func;
     pData->arg  = arg;
 
+    if (pAllocationCallbacks != NULL) {
+        pData->allocationCallbacks  = *pAllocationCallbacks;
+        pData->usingCustomAllocator = 1;
+    } else {
+        pData->allocationCallbacks.onMalloc  = NULL;
+        pData->allocationCallbacks.onFree    = NULL;
+        pData->allocationCallbacks.pUserData = NULL;
+        pData->usingCustomAllocator = 0;
+    }
+
     result = pthread_create(&thread, NULL, c89thrd_start_posix, pData);
     if (result != 0) {
-        c89thread_free(pData, c89thread_allocation_type_general, NULL);
+        c89thread_free(pData, c89thread_allocation_type_general, pAllocationCallbacks);
         return c89thrd_result_from_errno(errno);
     }
 
     *thr = thread;
 
     return c89thrd_success;
+}
+
+int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
+{
+    return c89thrd_create_ex(thr, func, arg, NULL);
 }
 
 int c89thrd_equal(c89thrd_t lhs, c89thrd_t rhs)
