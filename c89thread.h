@@ -5,7 +5,33 @@ David Reid - mackron@gmail.com
 */
 
 /*
-NOTE: Condition variables are not current supported on Win32 builds. If this is needed, you'll need to use pthread.
+NOTE: Condition variables are not current supported on Win32 builds. If this is needed, you'll need
+      to use pthread.
+
+Introduction
+============
+This library aims to implement an equivalent to the C11 threading library. Not everything is implemented:
+
+  * Condition variables are not supported on the Win32 build. If your compiler supports pthread, you
+    can use that instead by putting `#define C89THREAD_USE_PTHREAD` before including this file.
+  * Thread-specific storage (TSS/TLS) is not yet implemented.
+
+The API should be compatible with the main C11 API, but all apis have been namespaced with `c89`:
+
+    +----------+----------------+
+    | C11 Type | c89thread Type |
+    +----------+----------------+
+    | thrd_t   | c89thrd_t      |
+    | mtx_t    | c89mtx_t       |
+    | cnd_t    | c89cnd_t       |
+    +----------+----------------+
+
+In addition to types defined by the C11 standard, c89thread also implements the following primitives:
+
+    * Semaphores (`c89sem_t`)
+    * Events (`c89evnt_t`)
+
+This is still work-in-progress and not much testing has been done. Use at your own risk.
 */
 
 #ifndef c89thread_h
@@ -43,6 +69,14 @@ typedef void* c89thread_handle;
 #define TIME_UTC    1
 #endif
 
+#if defined(_MSC_VER) && _MSC_VER < 1900    /* 1900 = Visual Studio 2015 */
+struct timespec
+{
+    time_t tv_sec;
+    long tv_nsec;
+};
+#endif
+
 enum
 {
     c89thrd_success  =  0,
@@ -55,16 +89,21 @@ enum
 
 
 /* Memory Management. */
+typedef enum
+{
+    c89thread_allocation_type_general = 0
+} c89thread_allocation_type;
+
 typedef struct
 {
     void* pUserData;
-    void* (* onMalloc)(size_t sz, void* pUserData);
-    void  (* onFree)(void* p, void* pUserData);
+    void* (* onMalloc)(size_t sz, c89thread_allocation_type type, void* pUserData);
+    void  (* onFree)(void* p, c89thread_allocation_type type, void* pUserData);
 } c89thread_allocation_callbacks;
 
 void c89thread_set_allocation_callbacks(const c89thread_allocation_callbacks* pCallbacks);
-void* c89thread_malloc(size_t sz, const c89thread_allocation_callbacks* pCallbacks);
-void  c89thread_free(void* p, const c89thread_allocation_callbacks* pCallbacks);
+void* c89thread_malloc(size_t sz, c89thread_allocation_type type, const c89thread_allocation_callbacks* pCallbacks);
+void  c89thread_free(void* p, c89thread_allocation_type type, const c89thread_allocation_callbacks* pCallbacks);
 
 
 /* thrd_t */
@@ -195,6 +234,7 @@ Implementation
 /* Win32 */
 #if defined(C89THREAD_WIN32)
 #include <windows.h>
+#include <limits.h> /* For LONG_MAX */
 
 #ifndef C89THREAD_MALLOC
 #define C89THREAD_MALLOC(sz)    HeapAlloc(GetProcessHeap(), 0, (sz))
@@ -228,7 +268,7 @@ static time_t c89timespec_to_milliseconds(const struct timespec ts)
         milliseconds += 1; /* We truncated a sub-millisecond amount of time. Add an extra millisecond to meet the minimum duration requirement. */
     }
 
-    return milliseconds;
+    return (time_t)milliseconds;
 }
 
 static time_t c89timespec_diff_milliseconds(const struct timespec tsA, const struct timespec tsB)
@@ -254,7 +294,7 @@ static unsigned long WINAPI c89thrd_start_win32(void* pUserData)
     arg  = pStartData->arg;
 
     /* We should free the data pointer before entering into the start function. That way when c89thrd_exit() is called we don't leak. */
-    c89thread_free(pStartData, NULL);
+    c89thread_free(pStartData, c89thread_allocation_type_general, NULL);
 
     return (unsigned long)func(arg);
 }
@@ -274,7 +314,7 @@ int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
         return c89thrd_error;
     }
 
-    pData = c89thread_malloc(sizeof(*pData), NULL);   /* <-- This will be freed when c89thrd_start_win32() returns. */
+    pData = c89thread_malloc(sizeof(*pData), c89thread_allocation_type_general, NULL);   /* <-- This will be freed when c89thrd_start_win32() returns. */
     if (pData == NULL) {
         return c89thrd_nomem;
     }
@@ -284,7 +324,7 @@ int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
 
     hThread = CreateThread(NULL, 0, c89thrd_start_win32, pData, 0, NULL);
     if (hThread == NULL) {
-        c89thread_free(pData, NULL);
+        c89thread_free(pData, c89thread_allocation_type_general, NULL);
         return c89thrd_result_from_GetLastError(GetLastError());
     }
 
@@ -295,7 +335,16 @@ int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
 
 int c89thrd_equal(c89thrd_t lhs, c89thrd_t rhs)
 {
+    /*
+    Annoyingly, GetThreadId() is not defined for Windows XP. Need to conditionally enable this. I'm
+    not sure how to do this any other way, so I'm falling back to a simple handle comparison. I don't
+    think this is right, though. If anybody has any suggestions, let me know.
+    */
+#if defined(_WIN32_WINNT) && _WIN32_WINNT >= 0x0502
     return GetThreadId((HANDLE)lhs) == GetThreadId((HANDLE)rhs);
+#else
+    return lhs == rhs;
+#endif
 }
 
 c89thrd_t c89thrd_current(void)
@@ -881,7 +930,7 @@ static void* c89thrd_start_posix(void* pUserData)
     arg  = pStartData->arg;
 
     /* We should free the data pointer before entering into the start function. That way when c89thrd_exit() is called we don't leak. */
-    c89thread_free(pStartData);
+    c89thread_free(pStartData, c89thread_allocation_type_general, NULL);
 
     return (void*)(c89thread_intptr)func(arg);
 }
@@ -902,7 +951,7 @@ int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
         return c89thrd_error;
     }
 
-    pData = c89thread_malloc(sizeof(*pData));   /* <-- This will be freed when c89thrd_start_win32() returns. */
+    pData = c89thread_malloc(sizeof(*pData), c89thread_allocation_type_general, NULL);   /* <-- This will be freed when c89thrd_start_win32() returns. */
     if (pData == NULL) {
         return c89thrd_nomem;
     }
@@ -912,6 +961,7 @@ int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
 
     result = pthread_create(&thread, NULL, c89thrd_start_posix, pData);
     if (result != 0) {
+        c89thread_free(pData, c89thread_allocation_type_general, NULL);
         return c89thrd_result_from_errno(errno);
     }
 
@@ -1440,10 +1490,10 @@ void c89timespec_get(struct timespec* ts, int base)
 
     GetSystemTimeAsFileTime(&ft);
     currentMilliseconds = (((LONGLONG)ft.dwHighDateTime << 32) | (LONGLONG)ft.dwLowDateTime) / 10000;
-    currentMilliseconds = currentMilliseconds - 11644473600000LL; /* Windows to Unix epoch. */   /* <-- Won't work with VC6. Will need to use arithmetic to calculate this constant. */
+    currentMilliseconds = currentMilliseconds - ((LONGLONG)116444736 * 100000); /* Windows to Unix epoch. Normal value is 11644473600000LL, but VC6 doesn't like 64-bit constants. */
 
-    ts->tv_sec  =  currentMilliseconds / 1000;
-    ts->tv_nsec = (long)((currentMilliseconds - (ts->tv_sec * 1000)) * 1000000);
+    ts->tv_sec  = (time_t)(currentMilliseconds / 1000);
+    ts->tv_nsec =  (long)((currentMilliseconds - (ts->tv_sec * 1000)) * 1000000);
 }
 #else
 void c89timespec_get(struct timespec* ts, int base)
@@ -1544,24 +1594,24 @@ void c89thread_set_allocation_callbacks(const c89thread_allocation_callbacks* pC
     }
 }
 
-void* c89thread_malloc(size_t sz, const c89thread_allocation_callbacks* pCallbacks)
+void* c89thread_malloc(size_t sz, c89thread_allocation_type type, const c89thread_allocation_callbacks* pCallbacks)
 {
     if (pCallbacks != NULL) {
         if (pCallbacks->onMalloc != NULL) {
-            return pCallbacks->onMalloc(sz, pCallbacks->pUserData);
+            return pCallbacks->onMalloc(sz, type, pCallbacks->pUserData);
         } else {
             return C89THREAD_MALLOC(sz);
         }
     } else {
         if (g_c89thread_AllocationCallbacks.onMalloc != NULL) {
-            return g_c89thread_AllocationCallbacks.onMalloc(sz, g_c89thread_AllocationCallbacks.pUserData);
+            return g_c89thread_AllocationCallbacks.onMalloc(sz, type, g_c89thread_AllocationCallbacks.pUserData);
         } else {
             return C89THREAD_MALLOC(sz);
         }
     }
 }
 
-void c89thread_free(void* p, const c89thread_allocation_callbacks* pCallbacks)
+void c89thread_free(void* p, c89thread_allocation_type type, const c89thread_allocation_callbacks* pCallbacks)
 {
     if (p == NULL) {
         return;
@@ -1569,13 +1619,13 @@ void c89thread_free(void* p, const c89thread_allocation_callbacks* pCallbacks)
 
     if (pCallbacks != NULL) {
         if (pCallbacks->onFree != NULL) {
-            pCallbacks->onFree(p, pCallbacks->pUserData);
+            pCallbacks->onFree(p, type, pCallbacks->pUserData);
         } else {
             C89THREAD_FREE(p);
         }
     } else {
         if (g_c89thread_AllocationCallbacks.onFree != NULL) {
-            g_c89thread_AllocationCallbacks.onFree(p, g_c89thread_AllocationCallbacks.pUserData);
+            g_c89thread_AllocationCallbacks.onFree(p, type, g_c89thread_AllocationCallbacks.pUserData);
         } else {
             C89THREAD_FREE(p);
         }
