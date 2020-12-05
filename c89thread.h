@@ -5,7 +5,7 @@ David Reid - mackron@gmail.com
 */
 
 /*
-NOTE: Condition variables are not current supported on Win32 builds. If this is needed, you'll need
+NOTE: Condition variables are not currently supported on Win32 builds. If this is needed, you'll need
       to use pthread.
 
 Introduction
