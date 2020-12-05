@@ -16,7 +16,7 @@ This library aims to implement an equivalent to the C11 threading library. Not e
     can use that instead by putting `#define C89THREAD_USE_PTHREAD` before including c89thread.h.
   * Thread-specific storage (TSS/TLS) is not yet implemented.
 
-The API should be compatible with the main C11 API, but all apis have been namespaced with `c89`:
+The API should be compatible with the main C11 API, but all APIs have been namespaced with `c89`:
 
     +----------+----------------+
     | C11 Type | c89thread Type |
@@ -44,6 +44,21 @@ callbacks which will be used instead of the global callbacks if specified. This 
 c89thread and is not usable if you require strict C11 compatibility.
 
 This is still work-in-progress and not much testing has been done. Use at your own risk.
+
+
+Building
+========
+c89thread is a single file library. To use it, do something like the following in one .c file.
+
+    ```c
+    #define C89THREAD_IMPLEMENTATION
+    #include "c89thread.h"
+    ```
+
+You can then #include this file in other parts of the program as you would with any other header file.
+
+When compiling for Win32 it should work out of the box without needing to link to anything. If you're
+using pthreads, you may need to link with `-lpthread`.
 */
 
 #ifndef c89thread_h
