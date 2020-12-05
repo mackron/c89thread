@@ -134,6 +134,24 @@ int c89sem_timedwait(c89sem_t* sem, const struct timespec* time_point);
 int c89sem_post(c89sem_t* sem);
 
 
+/* c89evnt_t (not part of C11) */
+#if defined(C89THREAD_WIN32)
+typedef c89thread_handle c89evnt_t;
+#else
+typedef struct
+{
+    int value;
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+} c89evnt_t;
+#endif
+
+int c89evnt_init(c89evnt_t* evnt);
+void c89evnt_destroy(c89evnt_t* evnt);
+int c89evnt_wait(c89evnt_t* evnt);
+int c89evnt_timedwait(c89evnt_t* evnt, const struct timespec* time_point);
+int c89evnt_signal(c89evnt_t* evnt);
+
 
 /* Timing Helpers */
 void c89timespec_get(struct timespec* ts, int base);
@@ -681,10 +699,6 @@ int c89sem_wait(c89sem_t* sem)
 
     result = WaitForSingleObject((HANDLE)*sem, INFINITE);
     if (result != WAIT_OBJECT_0) {
-        if (result == WAIT_TIMEOUT) {
-            return c89thrd_timedout;
-        }
-
         return c89thrd_error;
     }
 
@@ -720,6 +734,89 @@ int c89sem_post(c89sem_t* sem)
     }
 
     result = ReleaseSemaphore((HANDLE)*sem, 1, NULL);
+    if (!result) {
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+
+
+int c89evnt_init(c89evnt_t* evnt)
+{
+    HANDLE hEvent;
+
+    if (evnt == NULL) {
+        return c89thrd_error;
+    }
+
+    *evnt = NULL;
+
+    hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    if (hEvent == NULL) {
+        return c89thrd_error;
+    }
+
+    *evnt = hEvent;
+
+    return c89thrd_success;
+}
+
+void c89evnt_destroy(c89evnt_t* evnt)
+{
+    if (evnt == NULL) {
+        return;
+    }
+
+    CloseHandle((HANDLE)*evnt);
+}
+
+int c89evnt_wait(c89evnt_t* evnt)
+{
+    DWORD result;
+
+    if (evnt == NULL) {
+        return c89thrd_error;
+    }
+
+    result = WaitForSingleObject((HANDLE)*evnt, INFINITE);
+    if (result != WAIT_OBJECT_0) {
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+int c89evnt_timedwait(c89evnt_t* evnt, const struct timespec* time_point)
+{
+    DWORD result;
+
+    if (evnt == NULL) {
+        return c89thrd_error;
+    }
+
+    result = WaitForSingleObject((HANDLE)*evnt, (DWORD)c89timespec_diff_milliseconds(*time_point, c89timespec_now()));
+    if (result != WAIT_OBJECT_0) {
+        if (result == WAIT_TIMEOUT) {
+            return c89thrd_timedout;
+        }
+
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+int c89evnt_signal(c89evnt_t* evnt)
+{
+    BOOL result;
+
+    if (evnt == NULL) {
+        return c89thrd_error;
+    }
+
+    result = SetEvent((HANDLE)*evnt);
     if (!result) {
         return c89thrd_error;
     }
@@ -1198,6 +1295,114 @@ int c89sem_post(c89sem_t* sem)
     pthread_mutex_unlock(&sem->lock);
     return c89thrd_success;
 }
+
+
+
+int c89evnt_init(c89evnt_t* evnt)
+{
+    int result;
+
+    if (evnt == NULL) {
+        return c89thrd_error;
+    }
+
+    evnt->value = 0;
+
+    result = pthread_mutex_init(&evnt->lock, NULL);
+    if (result != 0) {
+        return c89thrd_result_from_errno(result);  /* Failed to create mutex. */
+    }
+
+    result = pthread_cond_init(&evnt->cond, NULL);
+    if (result != 0) {
+        pthread_mutex_destroy(&evnt->lock);
+        return c89thrd_result_from_errno(result);  /* Failed to create condition variable. */
+    }
+
+    return c89thrd_success;
+}
+
+void c89evnt_destroy(c89evnt_t* evnt)
+{
+    if (evnt == NULL) {
+        return;
+    }
+
+    pthread_cond_destroy(&evnt->cond);
+    pthread_mutex_destroy(&evnt->lock);
+}
+
+int c89evnt_wait(c89evnt_t* evnt)
+{
+    int result;
+
+    if (evnt == NULL) {
+        return c89thrd_error;
+    }
+
+    result = pthread_mutex_lock(&evnt->lock);
+    if (result != 0) {
+        return c89thrd_error;
+    }
+
+    while (evnt->value == 0) {
+        pthread_cond_wait(&evnt->cond, &evnt->lock);
+    }
+    evnt->value = 0;  /* Auto-reset. */
+
+    pthread_mutex_unlock(&evnt->lock);
+    return c89thrd_success;
+}
+
+int c89evnt_timedwait(c89evnt_t* evnt, const struct timespec* time_point)
+{
+    int result;
+
+    if (evnt == NULL) {
+        return c89thrd_error;
+    }
+
+    result = pthread_mutex_timedlock(&evnt->lock, time_point);
+    if (result != 0) {
+        if (result == ETIMEDOUT) {
+            return c89thrd_timedout;
+        }
+
+        return c89thrd_error;
+    }
+
+    while (evnt->value == 0) {
+        result = pthread_cond_timedwait(&evnt->cond, &evnt->lock, time_point);
+        if (result == ETIMEDOUT) {
+            pthread_mutex_unlock(&evnt->lock);
+            return c89thrd_timedout;
+        }
+    }
+    evnt->value = 0;  /* Auto-reset. */
+
+    pthread_mutex_unlock(&evnt->lock);
+    return c89thrd_success;
+}
+
+int c89evnt_signal(c89evnt_t* evnt)
+{
+    int result;
+
+    if (evnt == NULL) {
+        return c89thrd_error;
+    }
+
+    result = pthread_mutex_lock(&evnt->lock);
+    if (result != 0) {
+        return c89thrd_error;
+    }
+
+    evnt->value = 1;
+    pthread_cond_signal(&evnt->cond);
+
+    pthread_mutex_unlock(&evnt->lock);
+    return c89thrd_success;
+}
 #endif
 
 
@@ -1313,9 +1518,6 @@ int c89thrd_sleep_milliseconds(int milliseconds)
 
     return c89thrd_sleep_timespec(c89timespec_milliseconds(milliseconds));
 }
-
-
-
 #endif /* C89THREAD_IMPLEMENTATION */
 
 /*
