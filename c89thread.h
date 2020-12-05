@@ -31,6 +31,15 @@ In addition to types defined by the C11 standard, c89thread also implements the 
     * Semaphores (`c89sem_t`)
     * Events (`c89evnt_t`)
 
+The C11 threading library uses the timespec function for specifying times, however this is not well
+supported on older compilers. Therefore, c89thread implements some helper functions for working with
+the timespec object. For known compilers that do not support the timespec struct, c89thread will
+define it.
+
+Sometimes c89thread will need to allocate memory internally. You can set a custom allocator at the
+global level with `c89thread_set_allocation_callbacks()`. This is not thread safe, but can be called
+from any thread so long as you do your own synchronization.
+
 This is still work-in-progress and not much testing has been done. Use at your own risk.
 */
 
@@ -69,7 +78,7 @@ typedef void* c89thread_handle;
 #define TIME_UTC    1
 #endif
 
-#if defined(_MSC_VER) && _MSC_VER < 1900    /* 1900 = Visual Studio 2015 */
+#if (defined(_MSC_VER) && _MSC_VER < 1900) || defined(__DMC__)  /* 1900 = Visual Studio 2015 */
 struct timespec
 {
     time_t tv_sec;
