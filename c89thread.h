@@ -54,6 +54,19 @@ enum
 };
 
 
+/* Memory Management. */
+typedef struct
+{
+    void* pUserData;
+    void* (* onMalloc)(size_t sz, void* pUserData);
+    void  (* onFree)(void* p, void* pUserData);
+} c89thread_allocation_callbacks;
+
+void c89thread_set_allocation_callbacks(const c89thread_allocation_callbacks* pCallbacks);
+void* c89thread_malloc(size_t sz, const c89thread_allocation_callbacks* pCallbacks);
+void  c89thread_free(void* p, const c89thread_allocation_callbacks* pCallbacks);
+
+
 /* thrd_t */
 #if defined(C89THREAD_WIN32)
 typedef c89thread_handle    c89thrd_t;  /* HANDLE, CreateThread() */
@@ -179,23 +192,17 @@ Implementation
 **************************************************************************************************/
 #if defined(C89THREAD_IMPLEMENTATION)
 
-static void* c89thread_malloc(size_t sz);
-static void  c89thread_free(void* p);
-
 /* Win32 */
 #if defined(C89THREAD_WIN32)
 #include <windows.h>
 
-static void* c89thread_malloc(size_t sz)
-{
-    return HeapAlloc(GetProcessHeap(), 0, (sz));
-}
+#ifndef C89THREAD_MALLOC
+#define C89THREAD_MALLOC(sz)    HeapAlloc(GetProcessHeap(), 0, (sz))
+#endif
 
-static void c89thread_free(void* p)
-{
-    HeapFree(GetProcessHeap(), 0, (p));
-}
-
+#ifndef C89THREAD_FREE
+#define C89THREAD_FREE(p)       HeapFree(GetProcessHeap(), 0, (p))
+#endif
 
 static int c89thrd_result_from_GetLastError(DWORD error)
 {
@@ -247,7 +254,7 @@ static unsigned long WINAPI c89thrd_start_win32(void* pUserData)
     arg  = pStartData->arg;
 
     /* We should free the data pointer before entering into the start function. That way when c89thrd_exit() is called we don't leak. */
-    c89thread_free(pStartData);
+    c89thread_free(pStartData, NULL);
 
     return (unsigned long)func(arg);
 }
@@ -267,7 +274,7 @@ int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
         return c89thrd_error;
     }
 
-    pData = c89thread_malloc(sizeof(*pData));   /* <-- This will be freed when c89thrd_start_win32() returns. */
+    pData = c89thread_malloc(sizeof(*pData), NULL);   /* <-- This will be freed when c89thrd_start_win32() returns. */
     if (pData == NULL) {
         return c89thrd_nomem;
     }
@@ -277,7 +284,7 @@ int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
 
     hThread = CreateThread(NULL, 0, c89thrd_start_win32, pData, 0, NULL);
     if (hThread == NULL) {
-        c89thread_free(pData);
+        c89thread_free(pData, NULL);
         return c89thrd_result_from_GetLastError(GetLastError());
     }
 
@@ -830,15 +837,13 @@ int c89evnt_signal(c89evnt_t* evnt)
 #include <stdlib.h> /* For malloc(), free(). */
 #include <errno.h>  /* For errno_t. */
 
-static void* c89thread_malloc(size_t sz)
-{
-    return malloc(sz);
-}
+#ifndef C89THREAD_MALLOC
+#define C89THREAD_MALLOC(sz)    malloc(sz)
+#endif
 
-static void c89thread_free(void* p)
-{
-    return free(p);
-}
+#ifndef C89THREAD_FREE
+#define C89THREAD_FREE(p)       free(p)
+#endif
 
 
 static int c89thrd_result_from_errno(int e)
@@ -1517,6 +1522,61 @@ int c89thrd_sleep_milliseconds(int milliseconds)
     }
 
     return c89thrd_sleep_timespec(c89timespec_milliseconds(milliseconds));
+}
+
+
+/*
+Memory Management
+*/
+static c89thread_allocation_callbacks g_c89thread_AllocationCallbacks;
+
+void c89thread_set_allocation_callbacks(const c89thread_allocation_callbacks* pCallbacks)
+{
+    if (pCallbacks == NULL) {
+        g_c89thread_AllocationCallbacks.pUserData = NULL;
+        g_c89thread_AllocationCallbacks.onMalloc  = NULL;
+        g_c89thread_AllocationCallbacks.onFree    = NULL;
+    } else {
+        g_c89thread_AllocationCallbacks = *pCallbacks;
+    }
+}
+
+void* c89thread_malloc(size_t sz, const c89thread_allocation_callbacks* pCallbacks)
+{
+    if (pCallbacks != NULL) {
+        if (pCallbacks->onMalloc != NULL) {
+            return pCallbacks->onMalloc(sz, pCallbacks->pUserData);
+        } else {
+            return C89THREAD_MALLOC(sz);
+        }
+    } else {
+        if (g_c89thread_AllocationCallbacks.onMalloc != NULL) {
+            return g_c89thread_AllocationCallbacks.onMalloc(sz, g_c89thread_AllocationCallbacks.pUserData);
+        } else {
+            return C89THREAD_MALLOC(sz);
+        }
+    }
+}
+
+void c89thread_free(void* p, const c89thread_allocation_callbacks* pCallbacks)
+{
+    if (p == NULL) {
+        return;
+    }
+
+    if (pCallbacks != NULL) {
+        if (pCallbacks->onFree != NULL) {
+            pCallbacks->onFree(p, pCallbacks->pUserData);
+        } else {
+            C89THREAD_FREE(p);
+        }
+    } else {
+        if (g_c89thread_AllocationCallbacks.onFree != NULL) {
+            g_c89thread_AllocationCallbacks.onFree(p, g_c89thread_AllocationCallbacks.pUserData);
+        } else {
+            C89THREAD_FREE(p);
+        }
+    }
 }
 #endif /* C89THREAD_IMPLEMENTATION */
 
