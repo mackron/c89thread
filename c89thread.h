@@ -442,11 +442,14 @@ int c89thrd_detach(c89thrd_t thr)
     The documentation for thrd_detach() says explicitly that any error should return thrd_error.
     We'll do the same, so make sure c89thrd_result_from_GetLastError() is not used here.
     */
-    if (CloseHandle((HANDLE)thr) != 0) {
-        return c89thrd_success;
-    } else {
+    BOOL result;
+
+    result = CloseHandle((HANDLE)thr);
+    if (!result) {
         return c89thrd_error;
     }
+
+    return c89thrd_success;
 }
 
 int c89thrd_join(c89thrd_t thr, int* res)
