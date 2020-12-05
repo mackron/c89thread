@@ -13,7 +13,7 @@ Introduction
 This library aims to implement an equivalent to the C11 threading library. Not everything is implemented:
 
   * Condition variables are not supported on the Win32 build. If your compiler supports pthread, you
-    can use that instead by putting `#define C89THREAD_USE_PTHREAD` before including this file.
+    can use that instead by putting `#define C89THREAD_USE_PTHREAD` before including c89thread.h.
   * Thread-specific storage (TSS/TLS) is not yet implemented.
 
 The API should be compatible with the main C11 API, but all apis have been namespaced with `c89`:
