@@ -3,6 +3,11 @@ C89 compatible threads. Choice of public domain or MIT-0. See license statements
 
 David Reid - mackron@gmail.com
 */
+
+/*
+NOTE: Condition variables are not current supported on Win32 builds. If this is needed, you'll need to use pthread.
+*/
+
 #ifndef c89thread_h
 #define c89thread_h
 
@@ -33,6 +38,10 @@ typedef void* c89thread_handle;
 #endif
 
 #include <time.h>   /* For timespec. */
+
+#ifndef TIME_UTC
+#define TIME_UTC    1
+#endif
 
 enum
 {
@@ -66,18 +75,77 @@ int c89thrd_join(c89thrd_t thr, int* res);
 
 /* mtx_t */
 #if defined(C89THREAD_WIN32)
-typedef c89thread_handle    c89mtx_t;   /* HANDLE, CreateMutex(), CreateEvent() */
+typedef struct
+{
+    c89thread_handle handle;    /* HANDLE, CreateMutex(), CreateEvent() */
+    int type;
+} c89mtx_t;
 #else
-typedef pthread_mutex_t     c89mtx_t;
+typedef pthread_mutex_t c89mtx_t;
 #endif
+
+enum
+{
+    c89mtx_plain     = 0x00000000,
+    c89mtx_timed     = 0x00000001,
+    c89mtx_recursive = 0x00000002
+};
+
+int c89mtx_init(c89mtx_t* mutex, int type);
+void c89mtx_destroy(c89mtx_t* mutex);
+int c89mtx_lock(c89mtx_t* mutex);
+int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point);
+int c89mtx_trylock(c89mtx_t* mutex);
+int c89mtx_unlock(c89mtx_t* mutex);
 
 
 /* cnd_t */
 #if defined(C89THREAD_WIN32)
-typedef struct { void* p; } c89cnd_t;   /* CONDITION_VARIABLE, InitializeConditionVariable() */
+/* Not implemented. */
+typedef void*           c89cnd_t;
 #else
-typedef pthread_cond_t      c89cnd_t;
+typedef pthread_cond_t  c89cnd_t;
 #endif
+
+int c89cnd_init(c89cnd_t* cnd);
+void c89cnd_destroy(c89cnd_t* cnd);
+int c89cnd_signal(c89cnd_t* cnd);
+int c89cnd_broadcast(c89cnd_t* cnd);
+int c89cnd_wait(c89cnd_t* cnd, c89mtx_t* mtx);
+int c89cnd_timedwait(c89cnd_t* cnd, c89mtx_t* mtx, const struct timespec* time_point);
+
+
+/* c89sem_t (not part of C11) */
+#if defined(C89THREAD_WIN32)
+typedef c89thread_handle c89sem_t;
+#else
+typedef struct
+{
+    int value;
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+} c89sem_t;
+#endif
+
+int c89sem_init(c89sem_t* sem, int value);
+void c89sem_destroy(c89sem_t* sem);
+int c89sem_wait(c89sem_t* sem);
+int c89sem_timedwait(c89sem_t* sem, const struct timespec* time_point);
+int c89sem_post(c89sem_t* sem);
+
+
+
+/* Timing Helpers */
+void c89timespec_get(struct timespec* ts, int base);
+struct timespec c89timespec_now();
+struct timespec c89timespec_milliseconds(time_t milliseconds);
+struct timespec c89timespec_seconds(time_t seconds);
+struct timespec c89timespec_diff(struct timespec lhs, struct timespec rhs);
+struct timespec c89timespec_add(struct timespec tsA, struct timespec tsB);
+
+/* Thread Helpers. */
+int c89thrd_sleep_timespec(struct timespec ts);
+int c89thrd_sleep_milliseconds(int milliseconds);
 
 
 #if defined(__cplusplus)
@@ -111,7 +179,7 @@ static void c89thread_free(void* p)
 }
 
 
-int c89thrd_result_from_GetLastError(DWORD error)
+static int c89thrd_result_from_GetLastError(DWORD error)
 {
     switch (error)
     {
@@ -123,6 +191,24 @@ int c89thrd_result_from_GetLastError(DWORD error)
     }
 
     return c89thrd_error;
+}
+
+
+static time_t c89timespec_to_milliseconds(const struct timespec ts)
+{
+    LONGLONG milliseconds;
+
+    milliseconds = ((ts.tv_sec * 1000) + (ts.tv_nsec / 1000000));
+    if ((ts.tv_nsec % 1000000) != 0) {
+        milliseconds += 1; /* We truncated a sub-millisecond amount of time. Add an extra millisecond to meet the minimum duration requirement. */
+    }
+
+    return milliseconds;
+}
+
+static time_t c89timespec_diff_milliseconds(const struct timespec tsA, const struct timespec tsB)
+{
+    return (unsigned int)c89timespec_to_milliseconds(c89timespec_diff(tsA, tsB));
 }
 
 
@@ -224,6 +310,8 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
         return c89thrd_error;
     }
 
+    start.QuadPart = 0;
+
     if (remaining != NULL) {
         if (frequency.QuadPart == 0) {
             if (QueryPerformanceFrequency(&frequency) == FALSE) {
@@ -297,8 +385,8 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
                     remainingCounter.QuadPart = 0;   /* For safety. Ensures we don't go negative. */
                 }
 
-                remaining->tv_sec  =  (remainingCounter.QuadPart * 1)          / frequency.QuadPart;
-                remaining->tv_nsec = ((remainingCounter.QuadPart * 1000000000) / frequency.QuadPart) - (remaining->tv_sec * (LONGLONG)1000000000);
+                remaining->tv_sec  = (time_t)((remainingCounter.QuadPart * 1)          / frequency.QuadPart);
+                remaining->tv_nsec =  (long)(((remainingCounter.QuadPart * 1000000000) / frequency.QuadPart) - (remaining->tv_sec * (LONGLONG)1000000000));
             }
         } else {
             remaining->tv_sec  = 0; /* Just for safety. */
@@ -368,6 +456,275 @@ int c89thrd_join(c89thrd_t thr, int* res)
     joining should be an implicit detach.
     */
     return c89thrd_detach(thr);
+}
+
+
+int c89mtx_init(c89mtx_t* mutex, int type)
+{
+    HANDLE hMutex;
+
+    if (mutex == NULL) {
+        return c89thrd_error;
+    }
+
+    /* Initialize the object to zero for safety. */
+    mutex->handle = NULL;
+    mutex->type   = 0;
+
+    /*
+    CreateMutex() will create a thread-aware mutex (allowing recursiveness), whereas an auto-reset
+    event (CreateEvent()) is not thread-aware and will deadlock (will not allow recursiveness). In
+    Win32 I'm making all mutex's timeable.
+    */
+    if ((type & c89mtx_recursive) != 0) {
+        hMutex = CreateMutex(NULL, FALSE, NULL);
+    } else {
+        hMutex = CreateEvent(NULL, FALSE, TRUE, NULL);
+    }
+
+    if (hMutex == NULL) {
+        return c89thrd_result_from_GetLastError(GetLastError());
+    }
+
+    mutex->handle = (c89thread_handle)hMutex;
+    mutex->type   = type;
+
+    return c89thrd_success;
+}
+
+void c89mtx_destroy(c89mtx_t* mutex)
+{
+    if (mutex == NULL) {
+        return;
+    }
+
+    CloseHandle((HANDLE)mutex->handle);
+}
+
+int c89mtx_lock(c89mtx_t* mutex)
+{
+    DWORD result;
+
+    if (mutex == NULL) {
+        return c89thrd_error;
+    }
+
+    result = WaitForSingleObject((HANDLE)mutex->handle, INFINITE);
+    if (result != WAIT_OBJECT_0) {
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
+{
+    DWORD result;
+
+    if (mutex == NULL || time_point == NULL) {
+        return c89thrd_error;
+    }
+
+    result = WaitForSingleObject((HANDLE)mutex->handle, (DWORD)c89timespec_diff_milliseconds(*time_point, c89timespec_now()));
+    if (result != WAIT_OBJECT_0) {
+        if (result == WAIT_TIMEOUT) {
+            return c89thrd_timedout;
+        }
+
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+int c89mtx_trylock(c89mtx_t* mutex)
+{
+    DWORD result;
+
+    if (mutex == NULL) {
+        return c89thrd_error;
+    }
+
+    result = WaitForSingleObject((HANDLE)mutex->handle, 0);
+    if (result != WAIT_OBJECT_0) {
+        return c89thrd_busy;
+    }
+
+    return c89thrd_success;
+}
+
+int c89mtx_unlock(c89mtx_t* mutex)
+{
+    BOOL result;
+
+    if (mutex == NULL) {
+        return c89thrd_error;
+    }
+
+    if ((mutex->type & c89mtx_recursive) != 0) {
+        result = ReleaseMutex((HANDLE)mutex->handle);
+    } else {
+        result = SetEvent((HANDLE)mutex->handle);
+    }
+
+    if (!result) {
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+
+
+int c89cnd_init(c89cnd_t* cnd)
+{
+    if (cnd == NULL) {
+        return c89thrd_error;
+    }
+
+    /* Not supporting condition variables on Win32. */
+    return c89thrd_error;
+}
+
+void c89cnd_destroy(c89cnd_t* cnd)
+{
+    if (cnd == NULL) {
+        return;
+    }
+
+    /* Not supporting condition variables on Win32. */
+}
+
+int c89cnd_signal(c89cnd_t* cnd)
+{
+    if (cnd == NULL) {
+        return c89thrd_error;
+    }
+
+    /* Not supporting condition variables on Win32. */
+    return c89thrd_error;
+}
+
+int c89cnd_broadcast(c89cnd_t* cnd)
+{
+    if (cnd == NULL) {
+        return c89thrd_error;
+    }
+
+    /* Not supporting condition variables on Win32. */
+    return c89thrd_error;
+}
+
+int c89cnd_wait(c89cnd_t* cnd, c89mtx_t* mtx)
+{
+    if (cnd == NULL) {
+        return c89thrd_error;
+    }
+
+    (void)mtx;
+
+    /* Not supporting condition variables on Win32. */
+    return c89thrd_error;
+}
+
+int c89cnd_timedwait(c89cnd_t* cnd, c89mtx_t* mtx, const struct timespec* time_point)
+{
+    if (cnd == NULL) {
+        return c89thrd_error;
+    }
+
+    (void)mtx;
+    (void)time_point;
+
+    /* Not supporting condition variables on Win32. */
+    return c89thrd_error;
+}
+
+
+
+int c89sem_init(c89sem_t* sem, int value)
+{
+    HANDLE hSemaphore;
+
+    if (sem == NULL) {
+        return c89thrd_error;
+    }
+
+    *sem = NULL;
+
+    hSemaphore = CreateSemaphore(NULL, value, LONG_MAX, NULL);
+    if (hSemaphore == NULL) {
+        return c89thrd_error;
+    }
+
+    *sem = hSemaphore;
+
+    return c89thrd_success;
+}
+
+void c89sem_destroy(c89sem_t* sem)
+{
+    if (sem == NULL) {
+        return;
+    }
+
+    CloseHandle((HANDLE)*sem);
+}
+
+int c89sem_wait(c89sem_t* sem)
+{
+    DWORD result;
+
+    if (sem == NULL) {
+        return c89thrd_error;
+    }
+
+    result = WaitForSingleObject((HANDLE)*sem, INFINITE);
+    if (result != WAIT_OBJECT_0) {
+        if (result == WAIT_TIMEOUT) {
+            return c89thrd_timedout;
+        }
+
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+int c89sem_timedwait(c89sem_t* sem, const struct timespec* time_point)
+{
+    DWORD result;
+
+    if (sem == NULL) {
+        return c89thrd_error;
+    }
+
+    result = WaitForSingleObject((HANDLE)*sem, (DWORD)c89timespec_diff_milliseconds(*time_point, c89timespec_now()));
+    if (result != WAIT_OBJECT_0) {
+        if (result == WAIT_TIMEOUT) {
+            return c89thrd_timedout;
+        }
+
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+int c89sem_post(c89sem_t* sem)
+{
+    BOOL result;
+
+    if (sem == NULL) {
+        return c89thrd_error;
+    }
+
+    result = ReleaseSemaphore((HANDLE)*sem, 1, NULL);
+    if (!result) {
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
 }
 #endif
 
@@ -475,15 +832,15 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
     to keep in mind the requirement to handle signal interrupts.
     */
     int result = nanosleep(duration, remaining);
-    if (result == 0) {
-        return c89thrd_success;
-    }
+    if (result != 0) {
+        if (result == EINTR) {
+            return c89thrd_signal;
+        }
 
-    if (result == EINTR) {
-        return c89thrd_signal;
+        return c89thrd_error;    
     }
-
-    return c89thrd_error;
+    
+    return c89thrd_success;
 }
 
 void c89thrd_yield(void)
@@ -503,11 +860,11 @@ int c89thrd_detach(c89thrd_t thr)
     for any other error. Don't use c89thrd_result_from_errno() here.
     */
     int result = pthread_detach(thr);
-    if (result == 0) {
-        return c89thrd_success;
-    } else {
+    if (result != 0) {
         return c89thrd_error;
     }
+
+    return c89thrd_success;
 }
 
 int c89thrd_join(c89thrd_t thr, int* res)
@@ -515,17 +872,447 @@ int c89thrd_join(c89thrd_t thr, int* res)
     /* Same rules apply here as thrd_detach() with respect to the return value. */
     void* retval;
     int result = pthread_join(thr, &retval);
-    if (result == 0) {
-        if (res != NULL) {
-            *res = (int)(c89thread_intptr)retval;
-        }
+    if (result != 0) {
+        return c89thrd_error;   
+    }
 
-        return c89thrd_success;
-    } else {
+    if (res != NULL) {
+        *res = (int)(c89thread_intptr)retval;
+    }
+
+    return c89thrd_success;
+}
+
+
+
+int c89mtx_init(c89mtx_t* mutex, int type)
+{
+    int result;
+    pthread_mutexattr_t attr;   /* For specifying whether or not the mutex is recursive. */
+
+    if (mutex == NULL) {
         return c89thrd_error;
     }
+
+    pthread_mutexattr_init(&attr);
+    if ((type & c89mtx_recursive) != 0) {
+        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    } else {
+        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_NORMAL);     /* Will deadlock. Consistent with Win32. */
+    }
+
+    result = pthread_mutex_init(mutex, &attr);
+    pthread_mutexattr_destroy(&attr);
+
+    if (result != 0) {
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+void c89mtx_destroy(c89mtx_t* mutex)
+{
+    if (mutex == NULL) {
+        return;
+    }
+
+    pthread_mutex_destroy(mutex);
+}
+
+int c89mtx_lock(c89mtx_t* mutex)
+{
+    int result;
+
+    if (mutex == NULL) {
+        return c89thrd_error;
+    }
+
+    result = pthread_mutex_lock(mutex);
+    if (result != 0) {
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
+{
+    int result;
+
+    if (mutex == NULL) {
+        return c89thrd_error;
+    }
+
+    result = pthread_mutex_timedlock(mutex, time_point);
+    if (result != 0) {
+        if (result == ETIMEDOUT) {
+            return c89thrd_timedout;
+        }
+
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+int c89mtx_trylock(c89mtx_t* mutex)
+{
+    int result;
+
+    if (mutex == NULL) {
+        return c89thrd_error;
+    }
+
+    result = pthread_mutex_trylock(mutex);
+    if (result != 0) {
+        if (result == EBUSY) {
+            return c89thrd_busy;
+        }
+
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+int c89mtx_unlock(c89mtx_t* mutex)
+{
+    int result;
+
+    if (mutex == NULL) {
+        return c89thrd_error;
+    }
+
+    result = pthread_mutex_unlock(mutex);
+    if (result == 0) {
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+
+
+int c89cnd_init(c89cnd_t* cnd)
+{
+    int result;
+
+    if (cnd == NULL) {
+        return c89thrd_error;
+    }
+
+    result = pthread_cond_init(cnd, NULL);
+    if (result != 0) {
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+void c89cnd_destroy(c89cnd_t* cnd)
+{
+    if (cnd == NULL) {
+        return;
+    }
+
+    pthread_cond_destroy(cnd);
+}
+
+int c89cnd_signal(c89cnd_t* cnd)
+{
+    int result;
+
+    if (cnd == NULL) {
+        return c89thrd_error;
+    }
+
+    result = pthread_cond_signal(cnd);
+    if (result != 0) {
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+int c89cnd_broadcast(c89cnd_t* cnd)
+{
+    int result;
+
+    if (cnd == NULL) {
+        return c89thrd_error;
+    }
+
+    result = pthread_cond_broadcast(cnd);
+    if (result != 0) {
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+int c89cnd_wait(c89cnd_t* cnd, c89mtx_t* mtx)
+{
+    int result;
+
+    if (cnd == NULL) {
+        return c89thrd_error;
+    }
+
+    result = pthread_cond_wait(cnd, mtx);
+    if (result != 0) {
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+int c89cnd_timedwait(c89cnd_t* cnd, c89mtx_t* mtx, const struct timespec* time_point)
+{
+    int result;
+
+    if (cnd == NULL) {
+        return c89thrd_error;
+    }
+
+    result = pthread_cond_timedwait(cnd, mtx, time_point);
+    if (result != 0) {
+        if (result == ETIMEDOUT) {
+            return c89thrd_timedout;
+        }
+
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+
+
+int c89sem_init(c89sem_t* sem, int value)
+{
+    int result;
+
+    if (sem == NULL) {
+        return c89thrd_error;
+    }
+
+    sem->value = value;
+
+    result = pthread_mutex_init(&sem->lock, NULL);
+    if (result != 0) {
+        return c89thrd_result_from_errno(result);  /* Failed to create mutex. */
+    }
+
+    result = pthread_cond_init(&sem->cond, NULL);
+    if (result != 0) {
+        pthread_mutex_destroy(&sem->lock);
+        return c89thrd_result_from_errno(result);  /* Failed to create condition variable. */
+    }
+
+    return c89thrd_success;
+}
+
+void c89sem_destroy(c89sem_t* sem)
+{
+    if (sem == NULL) {
+        return;
+    }
+
+    pthread_cond_destroy(&sem->cond);
+    pthread_mutex_destroy(&sem->lock);
+}
+
+int c89sem_wait(c89sem_t* sem)
+{
+    int result;
+
+    if (sem == NULL) {
+        return c89thrd_error;
+    }
+
+    result = pthread_mutex_lock(&sem->lock);
+    if (result != 0) {
+        return c89thrd_error;
+    }
+
+    /* We need to wait on a condition variable before escaping. We can't return from this function until the semaphore has been signaled. */
+    while (sem->value == 0) {
+        pthread_cond_wait(&sem->cond, &sem->lock);
+    }
+
+    sem->value -= 1;
+    pthread_mutex_unlock(&sem->lock);
+
+    return c89thrd_success;
+}
+
+int c89sem_timedwait(c89sem_t* sem, const struct timespec* time_point)
+{
+    int result;
+
+    if (sem == NULL) {
+        return c89thrd_error;
+    }
+
+    result = pthread_mutex_timedlock(&sem->lock, time_point);
+    if (result != 0) {
+        if (result == ETIMEDOUT) {
+            return c89thrd_timedout;
+        }
+
+        return c89thrd_error;
+    }
+
+    /* We need to wait on a condition variable before escaping. We can't return from this function until the semaphore has been signaled. */
+    while (sem->value == 0) {
+        result = pthread_cond_timedwait(&sem->cond, &sem->lock, time_point);
+        if (result == ETIMEDOUT) {
+            pthread_mutex_unlock(&sem->lock);
+            return c89thrd_timedout;
+        }
+    }
+
+    sem->value -= 1;
+
+    pthread_mutex_unlock(&sem->lock);
+    return c89thrd_success;
+}
+
+int c89sem_post(c89sem_t* sem)
+{
+    int result;
+
+    if (sem == NULL) {
+        return c89thrd_error;
+    }
+
+    result = pthread_mutex_lock(&sem->lock);
+    if (result != 0) {
+        return c89thrd_error;
+    }
+
+    sem->value += 1;
+    pthread_cond_signal(&sem->cond);
+
+    pthread_mutex_unlock(&sem->lock);
+    return c89thrd_success;
 }
 #endif
+
+
+#if defined(_WIN32)
+
+/* We'll need windows.h for a few timing things here. Sorry. */
+#if !defined(C89THREAD_WIN32)
+#include <windows.h>
+#endif
+
+void c89timespec_get(struct timespec* ts, int base)
+{
+    FILETIME ft;
+    LONGLONG currentMilliseconds;
+
+    if (ts == NULL) {
+        return;
+    }
+
+    ts->tv_sec  = 0;
+    ts->tv_nsec = 0;
+
+    /* Currently only supporting UTC. */
+    if (base != TIME_UTC) {
+        return;
+    }
+
+    GetSystemTimeAsFileTime(&ft);
+    currentMilliseconds = (((LONGLONG)ft.dwHighDateTime << 32) | (LONGLONG)ft.dwLowDateTime) / 10000;
+    currentMilliseconds = currentMilliseconds - 11644473600000LL; /* Windows to Unix epoch. */   /* <-- Won't work with VC6. Will need to use arithmetic to calculate this constant. */
+
+    ts->tv_sec  =  currentMilliseconds / 1000;
+    ts->tv_nsec = (long)((currentMilliseconds - (ts->tv_sec * 1000)) * 1000000);
+}
+#else
+void c89timespec_get(struct timespec* ts, int base)
+{
+    return timespec_get(ts, base);
+}
+#endif
+
+
+struct timespec c89timespec_now()
+{
+    struct timespec ts;
+
+    c89timespec_get(&ts, TIME_UTC);
+
+    return ts;
+}
+
+struct timespec c89timespec_seconds(time_t seconds)
+{
+    struct timespec ts;
+
+    ts.tv_sec  = seconds;
+    ts.tv_nsec = 0;
+
+    return ts;
+}
+
+struct timespec c89timespec_milliseconds(time_t milliseconds)
+{
+    struct timespec ts;
+
+    ts.tv_sec  = milliseconds / 1000;
+    ts.tv_nsec = (long)((milliseconds - (ts.tv_sec * 1000)) * 1000000);
+
+    return ts;
+}
+
+struct timespec c89timespec_diff(struct timespec lhs, struct timespec rhs)
+{
+    struct timespec diff;
+
+    diff.tv_sec = lhs.tv_sec - rhs.tv_sec;
+
+    if (lhs.tv_nsec > rhs.tv_nsec) {
+        diff.tv_nsec = lhs.tv_nsec - rhs.tv_nsec;
+    } else {
+        diff.tv_nsec = lhs.tv_nsec + 1000000000 - rhs.tv_nsec;
+        diff.tv_sec -= 1;
+    }
+
+    return diff;
+}
+
+struct timespec c89timespec_add(struct timespec tsA, struct timespec tsB)
+{
+    struct timespec ts;
+
+    ts.tv_sec  = tsA.tv_sec  + tsB.tv_sec;
+    ts.tv_nsec = tsA.tv_nsec + tsB.tv_nsec;
+    if (ts.tv_nsec >= 1000000000) {
+        ts.tv_nsec -= 1000000000;
+        ts.tv_sec  += 1;
+    }
+    
+    return ts;
+}
+
+
+int c89thrd_sleep_timespec(struct timespec ts)
+{
+    return c89thrd_sleep(&ts, NULL);
+}
+
+int c89thrd_sleep_milliseconds(int milliseconds)
+{
+    if (milliseconds < 0) {
+        milliseconds = 0;
+    }
+
+    return c89thrd_sleep_timespec(c89timespec_milliseconds(milliseconds));
+}
 
 
 
