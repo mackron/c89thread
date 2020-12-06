@@ -5,9 +5,6 @@ David Reid - mackron@gmail.com
 */
 
 /*
-NOTE: Condition variables are not currently supported on Win32 builds. If this is needed, you'll need
-      to use pthread.
-
 Introduction
 ============
 This library aims to implement an equivalent to the C11 threading library. Not everything is implemented:
@@ -202,12 +199,13 @@ typedef c89thread_handle c89sem_t;
 typedef struct
 {
     int value;
+    int valueMax;
     pthread_mutex_t lock;
     pthread_cond_t cond;
 } c89sem_t;
 #endif
 
-int c89sem_init(c89sem_t* sem, int value);
+int c89sem_init(c89sem_t* sem, int value, int valueMax);
 void c89sem_destroy(c89sem_t* sem);
 int c89sem_wait(c89sem_t* sem);
 int c89sem_timedwait(c89sem_t* sem, const struct timespec* time_point);
@@ -764,17 +762,17 @@ int c89cnd_timedwait(c89cnd_t* cnd, c89mtx_t* mtx, const struct timespec* time_p
 
 
 
-int c89sem_init(c89sem_t* sem, int value)
+int c89sem_init(c89sem_t* sem, int value, int valueMax)
 {
     HANDLE hSemaphore;
 
-    if (sem == NULL) {
+    if (sem == NULL || valueMax == 0 || value > valueMax) {
         return c89thrd_error;
     }
 
     *sem = NULL;
 
-    hSemaphore = CreateSemaphore(NULL, value, LONG_MAX, NULL);
+    hSemaphore = CreateSemaphore(NULL, value, valueMax, NULL);
     if (hSemaphore == NULL) {
         return c89thrd_error;
     }
@@ -1306,15 +1304,16 @@ int c89cnd_timedwait(c89cnd_t* cnd, c89mtx_t* mtx, const struct timespec* time_p
 
 
 
-int c89sem_init(c89sem_t* sem, int value)
+int c89sem_init(c89sem_t* sem, int value, int valueMax)
 {
     int result;
 
-    if (sem == NULL) {
+    if (sem == NULL || valueMax == 0 || value > valueMax) {
         return c89thrd_error;
     }
 
-    sem->value = value;
+    sem->value    = value;
+    sem->valueMax = valueMax;
 
     result = pthread_mutex_init(&sem->lock, NULL);
     if (result != 0) {
@@ -1409,8 +1408,12 @@ int c89sem_post(c89sem_t* sem)
         return c89thrd_error;
     }
 
-    sem->value += 1;
-    pthread_cond_signal(&sem->cond);
+    if (pSem->value < pSem->valueMax) {
+        pSem->value += 1;
+        pthread_cond_signal(&pSem->cond);
+    } else {
+        result = c89thrd_error;
+    }
 
     pthread_mutex_unlock(&sem->lock);
     return c89thrd_success;
