@@ -1408,9 +1408,9 @@ int c89sem_post(c89sem_t* sem)
         return c89thrd_error;
     }
 
-    if (pSem->value < pSem->valueMax) {
-        pSem->value += 1;
-        pthread_cond_signal(&pSem->cond);
+    if (sem->value < sem->valueMax) {
+        sem->value += 1;
+        pthread_cond_signal(&sem->cond);
     } else {
         result = c89thrd_error;
     }
