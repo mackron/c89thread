@@ -342,7 +342,7 @@ int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89
         return c89thrd_error;
     }
 
-    pData = c89thread_malloc(sizeof(*pData), c89thread_allocation_type_general, pAllocationCallbacks);   /* <-- This will be freed when c89thrd_start_win32() is entered. */
+    pData = (c89thrd_start_data_win32*)c89thread_malloc(sizeof(*pData), c89thread_allocation_type_general, pAllocationCallbacks);   /* <-- This will be freed when c89thrd_start_win32() is entered. */
     if (pData == NULL) {
         return c89thrd_nomem;
     }
