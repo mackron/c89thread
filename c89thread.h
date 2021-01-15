@@ -232,7 +232,7 @@ int c89evnt_signal(c89evnt_t* evnt);
 
 
 /* Timing Helpers */
-void c89timespec_get(struct timespec* ts, int base);
+int c89timespec_get(struct timespec* ts, int base);
 struct timespec c89timespec_now();
 struct timespec c89timespec_milliseconds(time_t milliseconds);
 struct timespec c89timespec_seconds(time_t seconds);
@@ -1536,13 +1536,13 @@ int c89evnt_signal(c89evnt_t* evnt)
 #include <windows.h>
 #endif
 
-void c89timespec_get(struct timespec* ts, int base)
+int c89timespec_get(struct timespec* ts, int base)
 {
     FILETIME ft;
     LONGLONG currentMilliseconds;
 
     if (ts == NULL) {
-        return;
+        return 0;   /* 0 = error. */
     }
 
     ts->tv_sec  = 0;
@@ -1550,7 +1550,7 @@ void c89timespec_get(struct timespec* ts, int base)
 
     /* Currently only supporting UTC. */
     if (base != TIME_UTC) {
-        return;
+        return 0;   /* 0 = error. */
     }
 
     GetSystemTimeAsFileTime(&ft);
@@ -1559,11 +1559,59 @@ void c89timespec_get(struct timespec* ts, int base)
 
     ts->tv_sec  = (time_t)(currentMilliseconds / 1000);
     ts->tv_nsec =  (long)((currentMilliseconds - (ts->tv_sec * 1000)) * 1000000);
+
+    return base;
 }
 #else
-void c89timespec_get(struct timespec* ts, int base)
+#include <sys/time.h>   /* For timeval. */
+
+struct timespec c89timespec_from_timeval(struct timeval* tv)
 {
-    timespec_get(ts, base);
+    struct timespec ts;
+
+    ts.tv_sec  = tv->tv_sec;
+    ts.tv_nsec = tv->tv_usec * 1000;
+
+    return ts;
+}
+
+int c89timespec_get(struct timespec* ts, int base)
+{
+    /*
+    This is annoying to get working on all compilers. Here's the hierarchy:
+
+        * If using C11, use timespec_get(); else
+        * If _POSIX_C_SOURCE >= 199309L, use clock_gettime(CLOCK_REALTIME, ...); else
+        * Fall back to gettimeofday().
+    */
+#if defined __STDC_VERSION__ && __STDC_VERSION__ >= 201112L
+    return timespec_get(ts, base);
+#else
+    if (base != TIME_UTC) {
+        return 0;   /* Only TIME_UTC is supported. 0 = error. */
+    }
+
+    #if _POSIX_C_SOURCE >= 199309L
+    {
+        if (clock_gettime(CLOCK_REALTIME, ts) != 0) {
+            return 0;   /* Failed to retrieve the time. 0 = error. */
+        }
+
+        /* Getting here means we were successful. On success, need to return base (strange...) */
+        return base;
+    }
+    #else
+    {
+        struct timeval tv;
+        if (gettimeofday(&tv, NULL) != 0) {
+            return 0;   /* Failed to retrieve the time. 0 = error. */
+        }
+
+        *ts = c89timespec_from_timeval(&tv);
+        return base;
+    }
+    #endif  /* _POSIX_C_SOURCE >= 199309L */
+#endif  /* C11 */
 }
 #endif
 
