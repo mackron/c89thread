@@ -1200,7 +1200,7 @@ int c89mtx_unlock(c89mtx_t* mutex)
     }
 
     result = pthread_mutex_unlock(mutex);
-    if (result == 0) {
+    if (result != 0) {
         return c89thrd_error;
     }
 
