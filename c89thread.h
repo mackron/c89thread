@@ -1684,7 +1684,7 @@ int c89timespec_get(struct timespec* ts, int base)
         * If _POSIX_C_SOURCE >= 199309L, use clock_gettime(CLOCK_REALTIME, ...); else
         * Fall back to gettimeofday().
     */
-#if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__APPLE__)
     return timespec_get(ts, base);
 #else
     if (base != TIME_UTC) {
