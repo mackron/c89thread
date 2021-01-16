@@ -95,14 +95,16 @@ typedef void* c89thread_handle;
     declared:
 
         pthread_mutexattr_settype()
-        pthread_mutex_timedlock()
-
-    A naive fallback to pthread_mutex_timedlock() would be to just run pthread_mutex_trylock() in a
-    loop with a short sleep between iterations. Not a high quality solution, but it would work.
 
     I am not sure yet how a fallback would work for pthread_mutexattr_settype(). It may just be
-    that it's just fundamentally not compatible without explicit pthread support which would make
-    the _XOPEN_SOURCE define mandatory. Needs further investigation.
+    that it's fundamentally not compatible without explicit pthread support which would make the
+    _XOPEN_SOURCE define mandatory. Needs further investigation.
+
+    In addition, pthread_mutex_timedlock() is only available since 2001 which is only enabled if
+    _XOPEN_SOURCE is defined to something >= 600. If this is not the case, a suboptimal fallback
+    will be used instead which calls pthread_mutex_trylock() in a loop, with a sleep after each
+    loop iteration. By setting _XOPEN_SOURCE here we reduce the likelyhood of users accidentally
+    falling back to the suboptimal fallback.
 
     I'm setting this to the latest version here (700) just in case this file is included at the top
     of a source file which later on depends on some POSIX functions from later revisions.
@@ -110,8 +112,8 @@ typedef void* c89thread_handle;
     #ifndef _XOPEN_SOURCE
     #define _XOPEN_SOURCE   700
     #else
-        #if _XOPEN_SOURCE < 600
-        #error _XOPEN_SOURCE must be >= 600. c89thread is not usable.
+        #if _XOPEN_SOURCE < 500
+        #error _XOPEN_SOURCE must be >= 500. c89thread is not usable.
         #endif
     #endif
     
@@ -265,10 +267,12 @@ int c89evnt_signal(c89evnt_t* evnt);
 /* Timing Helpers */
 int c89timespec_get(struct timespec* ts, int base);
 struct timespec c89timespec_now();
+struct timespec c89timespec_nanoseconds(time_t nanoseconds);
 struct timespec c89timespec_milliseconds(time_t milliseconds);
 struct timespec c89timespec_seconds(time_t seconds);
 struct timespec c89timespec_diff(struct timespec lhs, struct timespec rhs);
 struct timespec c89timespec_add(struct timespec tsA, struct timespec tsB);
+int c89timespec_cmp(struct timespec tsA, struct timespec tsB);
 
 /* Thread Helpers. */
 int c89thrd_sleep_timespec(struct timespec ts);
@@ -1253,6 +1257,62 @@ int c89mtx_lock(c89mtx_t* mutex)
     return c89thrd_success;
 }
 
+
+/* I'm not entirely sure what the best wait time would be, so making it configurable. Defaulting to 1 microsecond. */
+#ifndef C89THREAD_TIMEDLOCK_WAIT_TIME_IN_NANOSECONDS
+#define C89THREAD_TIMEDLOCK_WAIT_TIME_IN_NANOSECONDS    1000
+#endif
+
+static int c89pthread_mutex_timedlock(pthread_mutex_t* mutex, const struct timespec* time_point)
+{
+#if defined(__USE_XOPEN2K) && !defined(__APPLE__)
+    return pthread_mutex_timedlock(mutex, time_point);
+#else
+    /*
+    Fallback implementation for when pthread_mutex_timedlock() is not avaialble. This is just a
+    naive loop which waits a bit of time before continuing.
+    */
+    #if !defined(C89ATOMIC_SUPPRESS_FALLBACK_WARNING) && !defined(__APPLE__)
+        #warning pthread_mutex_timedlock() is unavailable. Falling back to a suboptimal implementation. Set _XOPEN_SOURCE to >= 600 to use the native implementation of pthread_mutex_timedlock(). Use C89ATOMIC_SUPPRESS_FALLBACK_WARNING to suppress this warning.
+    #endif
+
+    int result;
+
+    if (time_point == NULL) {
+        return c89thrd_error;
+    }
+
+    for (;;) {
+        result = pthread_mutex_trylock(mutex);
+        if (result == EBUSY) {
+            struct timespec tsNow;
+            c89timespec_get(&tsNow, TIME_UTC);
+
+            if (c89timespec_cmp(tsNow, *time_point) > 0) {
+                result = ETIMEDOUT;
+                break;
+            } else {
+                /* Have not yet timed out. Need to wait a bit and then try again. */
+                c89thrd_sleep_timespec(c89timespec_nanoseconds(C89THREAD_TIMEDLOCK_WAIT_TIME_IN_NANOSECONDS));
+                continue;
+            }
+        } else {
+            break;
+        }
+    }
+
+    if (result == 0) {
+        return c89thrd_success;
+    } else {
+        if (result == ETIMEDOUT) {
+            return c89thrd_timedout;
+        } else {
+            return c89thrd_error;
+        }
+    }
+#endif
+}
+
 int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
 {
     int result;
@@ -1261,7 +1321,7 @@ int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
         return c89thrd_error;
     }
 
-    result = pthread_mutex_timedlock(mutex, time_point);
+    result = c89pthread_mutex_timedlock(mutex, time_point);
     if (result != 0) {
         if (result == ETIMEDOUT) {
             return c89thrd_timedout;
@@ -1473,7 +1533,7 @@ int c89sem_timedwait(c89sem_t* sem, const struct timespec* time_point)
         return c89thrd_error;
     }
 
-    result = pthread_mutex_timedlock(&sem->lock, time_point);
+    result = c89pthread_mutex_timedlock(&sem->lock, time_point);
     if (result != 0) {
         if (result == ETIMEDOUT) {
             return c89thrd_timedout;
@@ -1587,7 +1647,7 @@ int c89evnt_timedwait(c89evnt_t* evnt, const struct timespec* time_point)
         return c89thrd_error;
     }
 
-    result = pthread_mutex_timedlock(&evnt->lock, time_point);
+    result = c89pthread_mutex_timedlock(&evnt->lock, time_point);
     if (result != 0) {
         if (result == ETIMEDOUT) {
             return c89thrd_timedout;
@@ -1725,12 +1785,12 @@ struct timespec c89timespec_now()
     return ts;
 }
 
-struct timespec c89timespec_seconds(time_t seconds)
+struct timespec c89timespec_nanoseconds(time_t nanoseconds)
 {
     struct timespec ts;
 
-    ts.tv_sec  = seconds;
-    ts.tv_nsec = 0;
+    ts.tv_sec  = nanoseconds / 1000000000;
+    ts.tv_nsec = (long)(nanoseconds - (ts.tv_sec * 1000000000));
 
     return ts;
 }
@@ -1741,6 +1801,16 @@ struct timespec c89timespec_milliseconds(time_t milliseconds)
 
     ts.tv_sec  = milliseconds / 1000;
     ts.tv_nsec = (long)((milliseconds - (ts.tv_sec * 1000)) * 1000000);
+
+    return ts;
+}
+
+struct timespec c89timespec_seconds(time_t seconds)
+{
+    struct timespec ts;
+
+    ts.tv_sec  = seconds;
+    ts.tv_nsec = 0;
 
     return ts;
 }
@@ -1773,6 +1843,27 @@ struct timespec c89timespec_add(struct timespec tsA, struct timespec tsB)
     }
     
     return ts;
+}
+
+int c89timespec_cmp(struct timespec tsA, struct timespec tsB)
+{
+    if (tsA.tv_sec == tsB.tv_sec) {
+        if (tsA.tv_nsec == tsB.tv_nsec) {
+            return 0;
+        } else {
+            if (tsA.tv_nsec > tsB.tv_nsec) {
+                return +1;
+            } else {
+                return -1;
+            }
+        }
+    } else {
+        if (tsA.tv_sec > tsB.tv_sec) {
+            return +1;
+        } else {
+            return -1;
+        }
+    }
 }
 
 
