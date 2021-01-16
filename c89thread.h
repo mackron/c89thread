@@ -25,8 +25,12 @@ The API should be compatible with the main C11 API, but all APIs have been names
 
 In addition to types defined by the C11 standard, c89thread also implements the following primitives:
 
-    * Semaphores (`c89sem_t`)
-    * Events (`c89evnt_t`)
+    +----------------+-------------+
+    | c89thread Type | Description |
+    +----------------+-------------+
+    | c89sem_t       | Semaphore   |
+    | c89evnt_t      | Event       |
+    +----------------+-------------+
 
 The C11 threading library uses the timespec function for specifying times, however this is not well
 supported on older compilers. Therefore, c89thread implements some helper functions for working with
@@ -84,6 +88,29 @@ typedef void* c89thread_handle;
     #ifndef C89THREAD_USE_PTHREAD
     #define C89THREAD_USE_PTHREAD
     #endif
+
+    /*
+    This is, hopefully, a temporary measure to get compilation working with the -std=c89 switch on
+    GCC and Clang. Unfortunately without this we get errors about the following functions not being
+    declared:
+
+        pthread_mutexattr_settype()
+        pthread_mutex_timedlock()
+
+    A naive fallback to pthread_mutex_timedlock() would be to just run pthread_mutex_trylock() in a
+    loop with a short sleep between iterations. Not a high quality solution, but it would work.
+
+    I am not sure yet how a fallback would work for pthread_mutexattr_settype(). It may just be
+    that it's just fundamentally not compatible without explicit pthread support which would make
+    the _XOPEN_SOURCE define mandatory. Needs further investigation.
+
+    I'm setting this to the latest version here (700) just in case this file is included at the top
+    of a source file which later on depends on some POSIX functions from later revisions.
+    */
+    #ifndef _XOPEN_SOURCE
+    #define _XOPEN_SOURCE   700
+    #endif
+    
     #include <pthread.h>
 #endif
 
