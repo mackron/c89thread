@@ -109,6 +109,10 @@ typedef void* c89thread_handle;
     */
     #ifndef _XOPEN_SOURCE
     #define _XOPEN_SOURCE   700
+    #else
+        #if _XOPEN_SOURCE < 600
+        #error _XOPEN_SOURCE must be >= 600. c89thread is not usable.
+        #endif
     #endif
     
     #include <pthread.h>
