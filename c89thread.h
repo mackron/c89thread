@@ -931,6 +931,7 @@ int c89evnt_signal(c89evnt_t* evnt)
 #if defined(C89THREAD_POSIX)
 #include <stdlib.h> /* For malloc(), free(). */
 #include <errno.h>  /* For errno_t. */
+#include <sys/time.h>   /* For timeval. */
 
 #ifndef C89THREAD_MALLOC
 #define C89THREAD_MALLOC(sz)    malloc(sz)
@@ -1043,10 +1044,14 @@ c89thrd_t c89thrd_current(void)
 int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
 {
     /*
-    The documentation for thrd_sleep() mentions nanosleep(), so we'll go ahead and use that. We need
-    to keep in mind the requirement to handle signal interrupts.
+    The documentation for thrd_sleep() mentions nanosleep(), so we'll go ahead and use that if it's
+    available. Otherwise we'll fallback to select() and use a similar algorithm to what we use with
+    the Windows build. We need to keep in mind the requirement to handle signal interrupts.
     */
-    int result = nanosleep(duration, remaining);
+    int result;
+
+#if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 199309L
+    result = nanosleep(duration, remaining);
     if (result != 0) {
         if (result == EINTR) {
             return c89thrd_signal;
@@ -1054,6 +1059,72 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
 
         return c89thrd_error;    
     }
+#else
+    /*
+    We need to fall back to select(). We'll use c89timespec_get() to retrieve the time before and after
+    for the purpose of diffing.
+    */
+    struct timeval tv;
+    struct timespec tsBeg;
+    struct timespec tsEnd;
+
+    if (duration == NULL) {
+        return c89thrd_error;
+    }
+
+    /*
+    We need to grab the time before the wait. This will be diff'd with the time after waiting to
+    produce the remaining amount.
+    */
+    if (remaining != NULL) {
+        result = c89timespec_get(&tsBeg, TIME_UTC);
+        if (result == 0) {
+            return c89thrd_error;   /* Failed to retrieve the start time. */
+        }
+    }
+
+    tv.tv_sec  = duration->tv_sec;
+    tv.tv_usec = duration->tv_nsec / 1000;
+
+    /*
+    We need to sleep for the *minimum* of `duration`. Our nanoseconds-to-microseconds conversion
+    above may have truncated some nanoseconds, so we'll need to add a microsecond to compensate.
+    */
+    if ((duration->tv_nsec % 1000) != 0) {
+        tv.tv_usec += 1;
+        if (tv.tv_usec > 1000000) {
+            tv.tv_usec = 0;
+            tv.tv_sec += 1;
+        }
+    }
+
+    result = select(0, NULL, NULL, NULL, &tv);
+    if (result == 0) {
+        if (remaining != NULL) {
+            remaining->tv_sec  = 0;
+            remaining->tv_nsec = 0;
+        }
+
+        return c89thrd_success;
+    }
+
+    /* Getting here means didn't wait the whole time. We'll need to grab the diff. */
+    if (remaining != NULL) {
+        if (c89timespec_get(&tsEnd, TIME_UTC) != 0) {
+            *remaining = c89timespec_diff(tsEnd, tsBeg);
+        } else {
+            /* Failed to get the end time, somehow. Shouldn't ever happen. */
+            remaining->tv_sec  = 0;
+            remaining->tv_nsec = 0;
+        }
+    }
+
+    if (result == EINTR) {
+        return c89thrd_signal;
+    } else {
+        return c89thrd_error;
+    }
+#endif
     
     return c89thrd_success;
 }
@@ -1563,8 +1634,6 @@ int c89timespec_get(struct timespec* ts, int base)
     return base;
 }
 #else
-#include <sys/time.h>   /* For timeval. */
-
 struct timespec c89timespec_from_timeval(struct timeval* tv)
 {
     struct timespec ts;
@@ -1584,14 +1653,14 @@ int c89timespec_get(struct timespec* ts, int base)
         * If _POSIX_C_SOURCE >= 199309L, use clock_gettime(CLOCK_REALTIME, ...); else
         * Fall back to gettimeofday().
     */
-#if defined __STDC_VERSION__ && __STDC_VERSION__ >= 201112L
+#if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
     return timespec_get(ts, base);
 #else
     if (base != TIME_UTC) {
         return 0;   /* Only TIME_UTC is supported. 0 = error. */
     }
 
-    #if _POSIX_C_SOURCE >= 199309L
+    #if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 199309L
     {
         if (clock_gettime(CLOCK_REALTIME, ts) != 0) {
             return 0;   /* Failed to retrieve the time. 0 = error. */
