@@ -23,8 +23,12 @@ The API should be compatible with the main C11 API, but all APIs have been names
 
 In addition to types defined by the C11 standard, c89thread also implements the following primitives:
 
-    * Semaphores (`c89sem_t`)
-    * Events (`c89evnt_t`)
+    +----------------+-------------+
+    | c89thread Type | Description |
+    +----------------+-------------+
+    | c89sem_t       | Semaphore   |
+    | c89evnt_t      | Event       |
+    +----------------+-------------+
 
 The C11 threading library uses the timespec function for specifying times, however this is not well
 supported on older compilers. Therefore, c89thread implements some helper functions for working with
