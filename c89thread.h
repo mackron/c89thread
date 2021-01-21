@@ -1692,12 +1692,6 @@ int c89evnt_signal(c89evnt_t* evnt)
 
 
 #if defined(_WIN32)
-
-/* We'll need windows.h for a few timing things here. Sorry. */
-#if !defined(C89THREAD_WIN32)
-#include <windows.h>
-#endif
-
 int c89timespec_get(struct timespec* ts, int base)
 {
     FILETIME ft;
@@ -1744,34 +1738,38 @@ int c89timespec_get(struct timespec* ts, int base)
         * If _POSIX_C_SOURCE >= 199309L, use clock_gettime(CLOCK_REALTIME, ...); else
         * Fall back to gettimeofday().
     */
-#if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__APPLE__)
-    return timespec_get(ts, base);
-#else
-    if (base != TIME_UTC) {
-        return 0;   /* Only TIME_UTC is supported. 0 = error. */
-    }
-
-    #if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 199309L
+    #if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__APPLE__)
     {
-        if (clock_gettime(CLOCK_REALTIME, ts) != 0) {
-            return 0;   /* Failed to retrieve the time. 0 = error. */
-        }
-
-        /* Getting here means we were successful. On success, need to return base (strange...) */
-        return base;
+        return timespec_get(ts, base);
     }
     #else
     {
-        struct timeval tv;
-        if (gettimeofday(&tv, NULL) != 0) {
-            return 0;   /* Failed to retrieve the time. 0 = error. */
+        if (base != TIME_UTC) {
+            return 0;   /* Only TIME_UTC is supported. 0 = error. */
         }
 
-        *ts = c89timespec_from_timeval(&tv);
-        return base;
+        #if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 199309L
+        {
+            if (clock_gettime(CLOCK_REALTIME, ts) != 0) {
+                return 0;   /* Failed to retrieve the time. 0 = error. */
+            }
+
+            /* Getting here means we were successful. On success, need to return base (strange...) */
+            return base;
+        }
+        #else
+        {
+            struct timeval tv;
+            if (gettimeofday(&tv, NULL) != 0) {
+                return 0;   /* Failed to retrieve the time. 0 = error. */
+            }
+
+            *ts = c89timespec_from_timeval(&tv);
+            return base;
+        }
+        #endif  /* _POSIX_C_SOURCE >= 199309L */
     }
-    #endif  /* _POSIX_C_SOURCE >= 199309L */
-#endif  /* C11 */
+    #endif  /* C11 */
 }
 #endif
 
