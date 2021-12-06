@@ -172,7 +172,14 @@ typedef pthread_t           c89thrd_t;
 
 typedef int (* c89thrd_start_t)(void*);
 
-int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89thread_allocation_callbacks* pAllocationCallbacks);
+typedef struct
+{
+    void* pUserData;
+    void (* onEntry)(void* pUserData);
+    void (* onExit)(void* pUserData);
+} c89thread_entry_exit_callbacks;
+
+int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89thread_entry_exit_callbacks* pEntryExitCallbacks, const c89thread_allocation_callbacks* pAllocationCallbacks);
 int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg);
 int c89thrd_equal(c89thrd_t lhs, c89thrd_t rhs);
 c89thrd_t c89thrd_current(void);
@@ -342,6 +349,7 @@ typedef struct
 {
     c89thrd_start_t func;
     void* arg;
+    c89thread_entry_exit_callbacks entryExitCallbacks;
     c89thread_allocation_callbacks allocationCallbacks;
     int usingCustomAllocator;
 } c89thrd_start_data_win32;
@@ -349,8 +357,15 @@ typedef struct
 static unsigned long WINAPI c89thrd_start_win32(void* pUserData)
 {
     c89thrd_start_data_win32* pStartData = (c89thrd_start_data_win32*)pUserData;
+    c89thread_entry_exit_callbacks entryExitCallbacks;
     c89thrd_start_t func;
     void* arg;
+    unsigned long result;
+
+    entryExitCallbacks = pStartData->entryExitCallbacks;
+    if (entryExitCallbacks.onEntry != NULL) {
+        entryExitCallbacks.onEntry(entryExitCallbacks.pUserData);
+    }
 
     /* Make sure we make a copy of the start data here. That way we can free pStartData straight away (it was allocated in c89thrd_create()). */
     func = pStartData->func;
@@ -359,10 +374,16 @@ static unsigned long WINAPI c89thrd_start_win32(void* pUserData)
     /* We should free the data pointer before entering into the start function. That way when c89thrd_exit() is called we don't leak. */
     c89thread_free(pStartData, c89thread_allocation_type_general, (pStartData->usingCustomAllocator) ? NULL : &pStartData->allocationCallbacks);
 
-    return (unsigned long)func(arg);
+    result = (unsigned long)func(arg);
+
+    if (entryExitCallbacks.onExit != NULL) {
+        entryExitCallbacks.onExit(entryExitCallbacks.pUserData);
+    }
+
+    return result;
 }
 
-int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89thread_allocation_callbacks* pAllocationCallbacks)
+int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89thread_entry_exit_callbacks* pEntryExitCallbacks, const c89thread_allocation_callbacks* pAllocationCallbacks)
 {
     HANDLE hThread;
     c89thrd_start_data_win32* pData;    /* <-- Needs to be allocated on the heap to ensure the data doesn't get trashed before the thread is entered. */
@@ -384,6 +405,14 @@ int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89
 
     pData->func = func;
     pData->arg  = arg;
+
+    if (pEntryExitCallbacks != NULL) {
+        pData->entryExitCallbacks = *pEntryExitCallbacks;
+    } else {
+        pData->entryExitCallbacks.onEntry   = NULL;
+        pData->entryExitCallbacks.onExit    = NULL;
+        pData->entryExitCallbacks.pUserData = NULL;
+    }
 
     if (pAllocationCallbacks != NULL) {
         pData->allocationCallbacks  = *pAllocationCallbacks;
@@ -408,7 +437,7 @@ int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89
 
 int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
 {
-    return c89thrd_create_ex(thr, func, arg, NULL);
+    return c89thrd_create_ex(thr, func, arg, NULL, NULL);
 }
 
 int c89thrd_equal(c89thrd_t lhs, c89thrd_t rhs)
@@ -996,6 +1025,7 @@ typedef struct
 {
     c89thrd_start_t func;
     void* arg;
+    c89thread_entry_exit_callbacks entryExitCallbacks;
     c89thread_allocation_callbacks allocationCallbacks;
     int usingCustomAllocator;
 } c89thrd_start_data_posix;
@@ -1003,8 +1033,15 @@ typedef struct
 static void* c89thrd_start_posix(void* pUserData)
 {
     c89thrd_start_data_posix* pStartData = (c89thrd_start_data_posix*)pUserData;
+    c89thread_entry_exit_callbacks entryExitCallbacks;
     c89thrd_start_t func;
     void* arg;
+    void* result;
+
+    entryExitCallbacks = pStartData->entryExitCallbacks;
+    if (entryExitCallbacks.onEntry != NULL) {
+        entryExitCallbacks.onEntry(entryExitCallbacks.pUserData);
+    }
 
     /* Make sure we make a copy of the start data here. That way we can free pStartData straight away (it was allocated in c89thrd_create()). */
     func = pStartData->func;
@@ -1013,10 +1050,16 @@ static void* c89thrd_start_posix(void* pUserData)
     /* We should free the data pointer before entering into the start function. That way when c89thrd_exit() is called we don't leak. */
     c89thread_free(pStartData, c89thread_allocation_type_general, (pStartData->usingCustomAllocator) ? NULL : &pStartData->allocationCallbacks);
 
-    return (void*)(c89thread_intptr)func(arg);
+    result = (void*)(c89thread_intptr)func(arg);
+
+    if (entryExitCallbacks.onExit != NULL) {
+        entryExitCallbacks.onExit(entryExitCallbacks.pUserData);
+    }
+
+    return result;
 }
 
-int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89thread_allocation_callbacks* pAllocationCallbacks)
+int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89thread_entry_exit_callbacks* pEntryExitCallbacks, const c89thread_allocation_callbacks* pAllocationCallbacks)
 {
     int result;
     c89thrd_start_data_posix* pData;
@@ -1039,6 +1082,14 @@ int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89
 
     pData->func = func;
     pData->arg  = arg;
+
+    if (pEntryExitCallbacks != NULL) {
+        pData->entryExitCallbacks = *pEntryExitCallbacks;
+    } else {
+        pData->entryExitCallbacks.onEntry   = NULL;
+        pData->entryExitCallbacks.onExit    = NULL;
+        pData->entryExitCallbacks.pUserData = NULL;
+    }
 
     if (pAllocationCallbacks != NULL) {
         pData->allocationCallbacks  = *pAllocationCallbacks;
@@ -1063,7 +1114,7 @@ int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89
 
 int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
 {
-    return c89thrd_create_ex(thr, func, arg, NULL);
+    return c89thrd_create_ex(thr, func, arg, NULL, NULL);
 }
 
 int c89thrd_equal(c89thrd_t lhs, c89thrd_t rhs)
