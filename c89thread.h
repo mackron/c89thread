@@ -69,22 +69,27 @@ using pthreads, you may need to link with `-lpthread`.
 extern "C" {
 #endif
 
+typedef signed   int c89thread_int32;
+typedef unsigned int c89thread_uint32;
+#if defined(__clang__) || (defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)))
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wlong-long"
+    #if defined(__clang__)
+        #pragma GCC diagnostic ignored "-Wc++11-long-long"
+    #endif
+#endif
+typedef signed   long long c89thread_int64;
+typedef unsigned long long c89thread_uint64;
+#if defined(__clang__) || (defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)))
+    #pragma GCC diagnostic pop
+#endif
+
 #if defined(__LP64__) || defined(_WIN64) || (defined(__x86_64__) && !defined(__ILP32__)) || defined(_M_X64) || defined(__ia64) || defined(_M_IA64) || defined(__aarch64__) || defined(__powerpc64__)
-    #if defined(__clang__) || (defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)))
-        #pragma GCC diagnostic push
-        #pragma GCC diagnostic ignored "-Wlong-long"
-        #if defined(__clang__)
-            #pragma GCC diagnostic ignored "-Wc++11-long-long"
-        #endif
-    #endif
-    typedef signed   long long c89thread_intptr;
-    typedef unsigned long long c89thread_uintptr;
-    #if defined(__clang__) || (defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)))
-        #pragma GCC diagnostic pop
-    #endif
+    typedef c89thread_int64  c89thread_intptr;
+    typedef c89thread_uint64 c89thread_uintptr;
 #else
-    typedef int          c89thread_intptr;
-    typedef unsigned int c89thread_uintptr;
+    typedef c89thread_int32  c89thread_intptr;
+    typedef c89thread_uint32 c89thread_uintptr;
 #endif
 typedef void* c89thread_handle;
 
@@ -136,8 +141,8 @@ typedef void* c89thread_handle;
         typedef pthread_cond_t      c89thread_pthread_cond_t;
     #else
         typedef c89thread_uintptr   c89thread_pthread_t;
-        typedef struct              c89thread_pthread_mutex_t { char __data[40]; } c89thread_pthread_mutex_t;
-        typedef struct              c89thread_pthread_cond_t  { char __data[48]; } c89thread_pthread_cond_t;
+        typedef union               c89thread_pthread_mutex_t { char __data[40]; c89thread_uint64 __alignment; } c89thread_pthread_mutex_t;
+        typedef union               c89thread_pthread_cond_t  { char __data[48]; c89thread_uint64 __alignment; } c89thread_pthread_cond_t;
     #endif
 #endif
 
