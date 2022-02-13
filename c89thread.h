@@ -1773,7 +1773,7 @@ int c89evnt_signal(c89evnt_t* evnt)
 int c89timespec_get(struct timespec* ts, int base)
 {
     FILETIME ft;
-    LONGLONG currentMilliseconds;
+    LONGLONG current100Nanoseconds;
 
     if (ts == NULL) {
         return 0;   /* 0 = error. */
@@ -1788,11 +1788,11 @@ int c89timespec_get(struct timespec* ts, int base)
     }
 
     GetSystemTimeAsFileTime(&ft);
-    currentMilliseconds = (((LONGLONG)ft.dwHighDateTime << 32) | (LONGLONG)ft.dwLowDateTime) / 10000;
-    currentMilliseconds = currentMilliseconds - ((LONGLONG)116444736 * 100000); /* Windows to Unix epoch. Normal value is 11644473600000LL, but VC6 doesn't like 64-bit constants. */
+    current100Nanoseconds = (((LONGLONG)ft.dwHighDateTime << 32) | (LONGLONG)ft.dwLowDateTime);
+    current100Nanoseconds = current100Nanoseconds - ((LONGLONG)116444736 * 1000000000); /* Windows to Unix epoch. Normal value is 116444736000000000LL, but VC6 doesn't like 64-bit constants. */
 
-    ts->tv_sec  = (time_t)(currentMilliseconds / 1000);
-    ts->tv_nsec =  (long)((currentMilliseconds - (ts->tv_sec * 1000)) * 1000000);
+    ts->tv_sec  = (time_t)(current100Nanoseconds / 10000000);
+    ts->tv_nsec =  (long)((current100Nanoseconds - (ts->tv_sec * 10000000)) * 100);
 
     return base;
 }
