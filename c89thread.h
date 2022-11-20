@@ -536,7 +536,7 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
 
     /*
     A small, but important detail here. The C11 spec states that thrd_sleep() should sleep for a
-    *minium* of the specified duration. In the above calculation we converted nanoseconds to
+    *minimum* of the specified duration. In the above calculation we converted nanoseconds to
     milliseconds, however this requires a division which may truncate a non-zero sub-millisecond
     amount of time. We need to add an extra millisecond to meet the minimum duration requirement if
     indeed we truncated.
