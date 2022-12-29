@@ -446,6 +446,7 @@ int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89
         pData->usingCustomAllocator = 1;
     } else {
         pData->allocationCallbacks.onMalloc  = NULL;
+        pData->allocationCallbacks.onRealloc = NULL;
         pData->allocationCallbacks.onFree    = NULL;
         pData->allocationCallbacks.pUserData = NULL;
         pData->usingCustomAllocator = 0;
@@ -1128,6 +1129,7 @@ int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89
         pData->usingCustomAllocator = 1;
     } else {
         pData->allocationCallbacks.onMalloc  = NULL;
+        pData->allocationCallbacks.onRealloc = NULL;
         pData->allocationCallbacks.onFree    = NULL;
         pData->allocationCallbacks.pUserData = NULL;
         pData->usingCustomAllocator = 0;
@@ -1967,23 +1969,43 @@ int c89thrd_sleep_milliseconds(int milliseconds)
 Memory Management
 */
 static c89thread_allocation_callbacks g_c89thread_AllocationCallbacks;
+static int g_c89thread_HasGlobalAllocationCallbacks = 0;
 
-void c89thread_set_allocation_callbacks(const c89thread_allocation_callbacks* pCallbacks)
+void c89thread_set_allocation_callbacks(const c89thread_allocation_callbacks* pAllocationCallbacks)
 {
-    if (pCallbacks == NULL) {
+    if (pAllocationCallbacks == NULL) {
         g_c89thread_AllocationCallbacks.pUserData = NULL;
         g_c89thread_AllocationCallbacks.onMalloc  = NULL;
+        g_c89thread_AllocationCallbacks.onRealloc = NULL;
         g_c89thread_AllocationCallbacks.onFree    = NULL;
+        g_c89thread_HasGlobalAllocationCallbacks  = 0;
     } else {
-        g_c89thread_AllocationCallbacks = *pCallbacks;
+        g_c89thread_AllocationCallbacks = *pAllocationCallbacks;
+        g_c89thread_HasGlobalAllocationCallbacks = 1;
     }
 }
 
-void* c89thread_malloc(size_t sz, const c89thread_allocation_callbacks* pCallbacks)
+const c89thread_allocation_callbacks* c89thread_choose_allocation_callbacks(const c89thread_allocation_callbacks* pAllocationCallbacks)
 {
-    if (pCallbacks != NULL) {
-        if (pCallbacks->onMalloc != NULL) {
-            return pCallbacks->onMalloc(sz, pCallbacks->pUserData);
+    if (pAllocationCallbacks != NULL) {
+        return pAllocationCallbacks;
+    }
+
+    if (g_c89thread_HasGlobalAllocationCallbacks) {
+        return &g_c89thread_AllocationCallbacks;
+    }
+
+    /* Don't have local nor global allocation callbacks. */
+    return NULL;
+}
+
+void* c89thread_malloc(size_t sz, const c89thread_allocation_callbacks* pAllocationCallbacks)
+{
+    pAllocationCallbacks = c89thread_choose_allocation_callbacks(pAllocationCallbacks);
+
+    if (pAllocationCallbacks != NULL) {
+        if (pAllocationCallbacks->onMalloc != NULL) {
+            return pAllocationCallbacks->onMalloc(sz, pAllocationCallbacks->pUserData);
         } else {
             return NULL;    /* Do not fall back to default implementation. */
         }
@@ -1992,11 +2014,13 @@ void* c89thread_malloc(size_t sz, const c89thread_allocation_callbacks* pCallbac
     }
 }
 
-void* c89thread_realloc(void* p, size_t sz, const c89thread_allocation_callbacks* pCallbacks)
+void* c89thread_realloc(void* p, size_t sz, const c89thread_allocation_callbacks* pAllocationCallbacks)
 {
-    if (pCallbacks != NULL) {
-        if (pCallbacks->onRealloc != NULL) {
-            return pCallbacks->onRealloc(p, sz, pCallbacks->pUserData);
+    pAllocationCallbacks = c89thread_choose_allocation_callbacks(pAllocationCallbacks);
+
+    if (pAllocationCallbacks != NULL) {
+        if (pAllocationCallbacks->onRealloc != NULL) {
+            return pAllocationCallbacks->onRealloc(p, sz, pAllocationCallbacks->pUserData);
         } else {
             return NULL;    /* Do not fall back to default implementation. */
         }
@@ -2005,15 +2029,17 @@ void* c89thread_realloc(void* p, size_t sz, const c89thread_allocation_callbacks
     }
 }
 
-void c89thread_free(void* p, const c89thread_allocation_callbacks* pCallbacks)
+void c89thread_free(void* p, const c89thread_allocation_callbacks* pAllocationCallbacks)
 {
     if (p == NULL) {
         return;
     }
 
-    if (pCallbacks != NULL) {
-        if (pCallbacks->onFree != NULL) {
-            pCallbacks->onFree(p, pCallbacks->pUserData);
+    pAllocationCallbacks = c89thread_choose_allocation_callbacks(pAllocationCallbacks);
+
+    if (pAllocationCallbacks != NULL) {
+        if (pAllocationCallbacks->onFree != NULL) {
+            pAllocationCallbacks->onFree(p, pAllocationCallbacks->pUserData);
         } else {
             return; /* Do not fall back to default implementation. */
         }
