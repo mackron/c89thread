@@ -1662,12 +1662,13 @@ int c89sem_post(c89sem_t* sem)
     if (sem->value < sem->valueMax) {
         sem->value += 1;
         pthread_cond_signal((pthread_cond_t*)&sem->cond);
+        result = c89thrd_success;
     } else {
         result = c89thrd_error;
     }
 
     pthread_mutex_unlock((pthread_mutex_t*)&sem->lock);
-    return c89thrd_success;
+    return result;
 }
 
 
