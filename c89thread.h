@@ -414,6 +414,7 @@ int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89
 {
     HANDLE hThread;
     c89thrd_start_data_win32* pData;    /* <-- Needs to be allocated on the heap to ensure the data doesn't get trashed before the thread is entered. */
+    DWORD threadID; /* Not used. Needed for passing into CreateThread(). Without this it'll fail on Windows 98. */
 
     if (thr == NULL) {
         return c89thrd_error;
@@ -452,7 +453,7 @@ int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89
         pData->usingCustomAllocator = 0;
     }
 
-    hThread = CreateThread(NULL, 0, c89thrd_start_win32, pData, 0, NULL);
+    hThread = CreateThread(NULL, 0, c89thrd_start_win32, pData, 0, &threadID);
     if (hThread == NULL) {
         c89thread_free(pData, pAllocationCallbacks);
         return c89thrd_result_from_GetLastError(GetLastError());
@@ -474,6 +475,9 @@ int c89thrd_equal(c89thrd_t lhs, c89thrd_t rhs)
     Annoyingly, GetThreadId() is not defined for Windows XP. Need to conditionally enable this. I'm
     not sure how to do this any other way, so I'm falling back to a simple handle comparison. I don't
     think this is right, though. If anybody has any suggestions, let me know.
+
+    TODO: In c89thrd_create_ex(), we're getting the threadID from CreateThread() but not using it.
+    Could we make use of that? When GetThreadId() is not available, maybe fall back to that?
     */
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= 0x0502
     return GetThreadId((HANDLE)lhs) == GetThreadId((HANDLE)rhs);
@@ -689,9 +693,9 @@ int c89mtx_init(c89mtx_t* mutex, int type)
     Win32 I'm making all mutex's timeable.
     */
     if ((type & c89mtx_recursive) != 0) {
-        hMutex = CreateMutex(NULL, FALSE, NULL);
+        hMutex = CreateMutexA(NULL, FALSE, NULL);
     } else {
-        hMutex = CreateEvent(NULL, FALSE, TRUE, NULL);
+        hMutex = CreateEventA(NULL, FALSE, TRUE, NULL);
     }
 
     if (hMutex == NULL) {
@@ -947,7 +951,7 @@ int c89evnt_init(c89evnt_t* evnt)
 
     *evnt = NULL;
 
-    hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    hEvent = CreateEventA(NULL, FALSE, FALSE, NULL);
     if (hEvent == NULL) {
         return c89thrd_error;
     }
