@@ -296,7 +296,7 @@ int c89evnt_signal(c89evnt_t* evnt);
 
 /* Timing Helpers */
 int c89timespec_get(struct timespec* ts, int base);
-struct timespec c89timespec_now();
+struct timespec c89timespec_now(void);
 struct timespec c89timespec_nanoseconds(time_t nanoseconds);
 struct timespec c89timespec_milliseconds(time_t milliseconds);
 struct timespec c89timespec_seconds(time_t seconds);
@@ -1864,7 +1864,7 @@ int c89timespec_get(struct timespec* ts, int base)
 #endif
 
 
-struct timespec c89timespec_now()
+struct timespec c89timespec_now(void)
 {
     struct timespec ts;
 
