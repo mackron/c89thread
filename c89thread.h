@@ -1361,8 +1361,8 @@ static int c89pthread_mutex_timedlock(pthread_mutex_t* mutex, const struct times
     Fallback implementation for when pthread_mutex_timedlock() is not avaialble. This is just a
     naive loop which waits a bit of time before continuing.
     */
-    #if !defined(C89ATOMIC_SUPPRESS_FALLBACK_WARNING) && !defined(__APPLE__)
-        #warning pthread_mutex_timedlock() is unavailable. Falling back to a suboptimal implementation. Set _XOPEN_SOURCE to >= 600 to use the native implementation of pthread_mutex_timedlock(). Use C89ATOMIC_SUPPRESS_FALLBACK_WARNING to suppress this warning.
+    #if !defined(C89THREAD_SUPPRESS_MUTEX_TIMEDLOCK_FALLBACK_WARNING) && !defined(__APPLE__)
+        #warning pthread_mutex_timedlock() is unavailable. Falling back to a suboptimal implementation. Set _XOPEN_SOURCE to >= 600 to use the native implementation of pthread_mutex_timedlock(). Use C89THREAD_SUPPRESS_MUTEX_TIMEDLOCK_FALLBACK_WARNING to suppress this warning.
     #endif
 
     int result;
