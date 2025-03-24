@@ -101,6 +101,7 @@ typedef void* c89thread_handle;
     #define C89THREAD_POSIX
 #endif
 
+/* BEG c89thread_basic_types.h */
 #if defined(C89THREAD_POSIX)
     #ifndef C89THREAD_USE_PTHREAD
     #define C89THREAD_USE_PTHREAD
@@ -169,6 +170,7 @@ enum
     c89thrd_busy     = -4,
     c89thrd_error    = -5
 };
+/* END c89thread_basic_types.h */
 
 
 /* Memory Management. */
@@ -186,7 +188,8 @@ void* c89thread_realloc(void* p, size_t sz, const c89thread_allocation_callbacks
 void  c89thread_free(void* p, const c89thread_allocation_callbacks* pCallbacks);
 
 
-/* thrd_t */
+/* BEG c89thread_types.h */
+/* c89thrd_t */
 #if defined(C89THREAD_WIN32)
 typedef c89thread_handle    c89thrd_t;  /* HANDLE, CreateThread() */
 #else
@@ -213,7 +216,7 @@ int c89thrd_detach(c89thrd_t thr);
 int c89thrd_join(c89thrd_t thr, int* res);
 
 
-/* mtx_t */
+/* c89mtx_t */
 #if defined(C89THREAD_WIN32)
 typedef struct
 {
@@ -239,7 +242,7 @@ int c89mtx_trylock(c89mtx_t* mutex);
 int c89mtx_unlock(c89mtx_t* mutex);
 
 
-/* cnd_t */
+/* c89cnd_t */
 #if defined(C89THREAD_WIN32)
 /* Not implemented. */
 typedef void*                    c89cnd_t;
@@ -292,7 +295,7 @@ void c89evnt_destroy(c89evnt_t* evnt);
 int c89evnt_wait(c89evnt_t* evnt);
 int c89evnt_timedwait(c89evnt_t* evnt, const struct timespec* time_point);
 int c89evnt_signal(c89evnt_t* evnt);
-
+/* END c89thread_types.h */
 
 /* Timing Helpers */
 int c89timespec_get(struct timespec* ts, int base);
@@ -322,6 +325,7 @@ Implementation
 **************************************************************************************************/
 #if defined(C89THREAD_IMPLEMENTATION)
 
+/* BEG c89thread_types.c */
 /* Win32 */
 #if defined(C89THREAD_WIN32)
 #include <windows.h>
@@ -791,7 +795,7 @@ int c89mtx_unlock(c89mtx_t* mutex)
 }
 
 
-
+/* BEG c89cnd_win32.c */
 int c89cnd_init(c89cnd_t* cnd)
 {
     if (cnd == NULL) {
@@ -855,7 +859,7 @@ int c89cnd_timedwait(c89cnd_t* cnd, c89mtx_t* mtx, const struct timespec* time_p
     /* Not supporting condition variables on Win32. */
     return c89thrd_error;
 }
-
+/* END c89cnd_win32.c */
 
 
 int c89sem_init(c89sem_t* sem, int value, int valueMax)
@@ -1459,7 +1463,7 @@ int c89mtx_unlock(c89mtx_t* mutex)
 }
 
 
-
+/* BEG c89cnd_pthread.c */
 int c89cnd_init(c89cnd_t* cnd)
 {
     int result;
@@ -1552,7 +1556,7 @@ int c89cnd_timedwait(c89cnd_t* cnd, c89mtx_t* mtx, const struct timespec* time_p
 
     return c89thrd_success;
 }
-
+/* END c89cnd_pthread.c */
 
 
 int c89sem_init(c89sem_t* sem, int value, int valueMax)
@@ -1779,6 +1783,7 @@ int c89evnt_signal(c89evnt_t* evnt)
     return c89thrd_success;
 }
 #endif
+/* END c89thread_types.c */
 
 
 #if defined(_WIN32)
