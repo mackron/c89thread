@@ -347,9 +347,10 @@ Implementation
 #define C89THREAD_FREE(p)           HeapFree(GetProcessHeap(), 0, (p))
 #endif
 
-static int c89thrd_result_from_GetLastError(DWORD error)
+/* BEG c89thrd_result_from_GetLastError.c */
+static int c89thrd_result_from_GetLastError(void)
 {
-    switch (error)
+    switch (GetLastError())
     {
         case ERROR_SUCCESS:             return c89thrd_success;
         case ERROR_NOT_ENOUGH_MEMORY:   return c89thrd_nomem;
@@ -360,7 +361,7 @@ static int c89thrd_result_from_GetLastError(DWORD error)
 
     return c89thrd_error;
 }
-
+/* END c89thrd_result_from_GetLastError.c */
 
 static time_t c89timespec_to_milliseconds(const struct timespec ts)
 {
@@ -464,7 +465,7 @@ int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89
     hThread = CreateThread(NULL, 0, c89thrd_start_win32, pData, 0, &threadID);
     if (hThread == NULL) {
         c89thread_free(pData, pAllocationCallbacks);
-        return c89thrd_result_from_GetLastError(GetLastError());
+        return c89thrd_result_from_GetLastError();
     }
 
     *thr = (c89thrd_t)hThread;
@@ -707,7 +708,7 @@ int c89mtx_init(c89mtx_t* mutex, int type)
     }
 
     if (hMutex == NULL) {
-        return c89thrd_result_from_GetLastError(GetLastError());
+        return c89thrd_result_from_GetLastError();
     }
 
     mutex->handle = (c89thread_handle)hMutex;
