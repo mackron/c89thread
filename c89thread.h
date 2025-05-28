@@ -151,6 +151,35 @@ typedef void* c89thread_handle;
     #endif
 #endif
 
+enum
+{
+    c89thrd_success  =  0,
+    c89thrd_signal   = -1,  /* Not one of the standard results specified by C11, but -1 is used to indicate a signal in some APIs (thrd_sleep(), for example). */
+    c89thrd_nomem    = -2,
+    c89thrd_timedout = -3,
+    c89thrd_busy     = -4,
+    c89thrd_error    = -5
+};
+/* END c89thread_basic_types.h */
+
+
+/* BEG c89thread_allocation_callbacks.h */
+typedef struct
+{
+    void* pUserData;
+    void* (* onMalloc)(size_t sz, void* pUserData);
+    void* (* onRealloc)(void* p, size_t sz, void* pUserData);
+    void  (* onFree)(void* p, void* pUserData);
+} c89thread_allocation_callbacks;
+
+void c89thread_set_allocation_callbacks(const c89thread_allocation_callbacks* pCallbacks);
+void* c89thread_malloc(size_t sz, const c89thread_allocation_callbacks* pCallbacks);
+void* c89thread_realloc(void* p, size_t sz, const c89thread_allocation_callbacks* pCallbacks);
+void  c89thread_free(void* p, const c89thread_allocation_callbacks* pCallbacks);
+/* END c89thread_allocation_callbacks.h */
+
+
+/* BEG c89thread_timespec.h */
 #include <time.h>   /* For timespec. */
 
 #ifndef TIME_UTC
@@ -165,31 +194,15 @@ struct timespec
 };
 #endif
 
-enum
-{
-    c89thrd_success  =  0,
-    c89thrd_signal   = -1,  /* Not one of the standard results specified by C11, but -1 is used to indicate a signal in some APIs (thrd_sleep(), for example). */
-    c89thrd_nomem    = -2,
-    c89thrd_timedout = -3,
-    c89thrd_busy     = -4,
-    c89thrd_error    = -5
-};
-/* END c89thread_basic_types.h */
-
-
-/* Memory Management. */
-typedef struct
-{
-    void* pUserData;
-    void* (* onMalloc)(size_t sz, void* pUserData);
-    void* (* onRealloc)(void* p, size_t sz, void* pUserData);
-    void  (* onFree)(void* p, void* pUserData);
-} c89thread_allocation_callbacks;
-
-void c89thread_set_allocation_callbacks(const c89thread_allocation_callbacks* pCallbacks);
-void* c89thread_malloc(size_t sz, const c89thread_allocation_callbacks* pCallbacks);
-void* c89thread_realloc(void* p, size_t sz, const c89thread_allocation_callbacks* pCallbacks);
-void  c89thread_free(void* p, const c89thread_allocation_callbacks* pCallbacks);
+int c89timespec_get(struct timespec* ts, int base);
+struct timespec c89timespec_now(void);
+struct timespec c89timespec_nanoseconds(time_t nanoseconds);
+struct timespec c89timespec_milliseconds(time_t milliseconds);
+struct timespec c89timespec_seconds(time_t seconds);
+struct timespec c89timespec_diff(struct timespec lhs, struct timespec rhs);
+struct timespec c89timespec_add(struct timespec tsA, struct timespec tsB);
+int c89timespec_cmp(struct timespec tsA, struct timespec tsB);
+/* END c89thread_timespec.h */
 
 
 /* BEG c89thread_types.h */
@@ -301,19 +314,11 @@ int c89evnt_timedwait(c89evnt_t* evnt, const struct timespec* time_point);
 int c89evnt_signal(c89evnt_t* evnt);
 /* END c89thread_types.h */
 
-/* Timing Helpers */
-int c89timespec_get(struct timespec* ts, int base);
-struct timespec c89timespec_now(void);
-struct timespec c89timespec_nanoseconds(time_t nanoseconds);
-struct timespec c89timespec_milliseconds(time_t milliseconds);
-struct timespec c89timespec_seconds(time_t seconds);
-struct timespec c89timespec_diff(struct timespec lhs, struct timespec rhs);
-struct timespec c89timespec_add(struct timespec tsA, struct timespec tsB);
-int c89timespec_cmp(struct timespec tsA, struct timespec tsB);
 
-/* Thread Helpers. */
+/* BEG c89thread_sleep.h */
 int c89thrd_sleep_timespec(struct timespec ts);
 int c89thrd_sleep_milliseconds(int milliseconds);
+/* END c89thread_sleep.h */
 
 
 #if defined(__cplusplus)
@@ -1051,7 +1056,7 @@ int c89evnt_signal(c89evnt_t* evnt)
 #define C89THREAD_FREE(p)           free(p)
 #endif
 
-
+/* BEG c89thrd_result_from_errno.c */
 static int c89thrd_result_from_errno(int e)
 {
     switch (e)
@@ -1065,7 +1070,7 @@ static int c89thrd_result_from_errno(int e)
 
     return c89thrd_error;
 }
-
+/* END c89thrd_result_from_errno.c */
 
 typedef struct
 {
@@ -1791,6 +1796,24 @@ int c89evnt_signal(c89evnt_t* evnt)
 /* END c89thread_types.c */
 
 
+/* BEG c89thread_sleep.c */
+int c89thrd_sleep_timespec(struct timespec ts)
+{
+    return c89thrd_sleep(&ts, NULL);
+}
+
+int c89thrd_sleep_milliseconds(int milliseconds)
+{
+    if (milliseconds < 0) {
+        milliseconds = 0;
+    }
+
+    return c89thrd_sleep_timespec(c89timespec_milliseconds(milliseconds));
+}
+/* END c89thread_sleep.c */
+
+
+/* BEG c89thread_timespec.c */
 #if defined(_WIN32)
 int c89timespec_get(struct timespec* ts, int base)
 {
@@ -1963,26 +1986,10 @@ int c89timespec_cmp(struct timespec tsA, struct timespec tsB)
         }
     }
 }
+/* END c89thread_timespec.c */
 
 
-int c89thrd_sleep_timespec(struct timespec ts)
-{
-    return c89thrd_sleep(&ts, NULL);
-}
-
-int c89thrd_sleep_milliseconds(int milliseconds)
-{
-    if (milliseconds < 0) {
-        milliseconds = 0;
-    }
-
-    return c89thrd_sleep_timespec(c89timespec_milliseconds(milliseconds));
-}
-
-
-/*
-Memory Management
-*/
+/* BEG c89thread_allocation_callbacks.c */
 static c89thread_allocation_callbacks g_c89thread_AllocationCallbacks;
 static int g_c89thread_HasGlobalAllocationCallbacks = 0;
 
@@ -2062,6 +2069,8 @@ void c89thread_free(void* p, const c89thread_allocation_callbacks* pAllocationCa
         C89THREAD_FREE(p);
     }
 }
+/* END c89thread_allocation_callbacks.c */
+
 #endif /* C89THREAD_IMPLEMENTATION */
 
 /*
