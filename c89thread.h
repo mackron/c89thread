@@ -321,6 +321,11 @@ int c89thrd_sleep_milliseconds(int milliseconds);
 /* END c89thread_sleep.h */
 
 
+/* BEG c89thread_cpu_count.h */
+int c89thread_get_logical_cpu_count(void);
+/* END c89thread_cpu_count.h */
+
+
 #if defined(__cplusplus)
 }
 #endif
@@ -1987,6 +1992,52 @@ int c89timespec_cmp(struct timespec tsA, struct timespec tsB)
     }
 }
 /* END c89thread_timespec.c */
+
+
+/* BEG c89thread_cpu_count.h */
+#if !defined(_WIN32)
+    #if defined(__APPLE__) && defined(__MACH__)
+        #include <sys/sysctl.h>  /* For sysctlbyname() to get CPU count. */
+    #else
+        #include <unistd.h>      /* For sysconf() to get CPU count. */
+    #endif
+#endif
+
+int c89thread_get_logical_cpu_count(void)
+{
+    #if defined(_WIN32)
+    {
+        SYSTEM_INFO sysInfo;
+        GetSystemInfo(&sysInfo);
+
+        return (int)sysInfo.dwNumberOfProcessors;
+    }
+    #elif defined(__APPLE__) && defined(__MACH__)
+    {
+        int count;
+        size_t size = sizeof(count);
+
+        if (sysctlbyname("hw.logicalcpu", &count, &size, NULL, 0) != 0) {
+            /* Fall back to physical CPU cound. */
+            if (sysctlbyname("hw.physicalcpu", &count, &size, NULL, 0) != 0) {
+                return 1;  /* Failed to retrieve the logical CPU count. */
+            }
+        }
+
+        return count;
+    }
+    #else
+    {
+        int count = sysconf(_SC_NPROCESSORS_ONLN);
+        if (count < 1) {
+            return 1;  /* Failed to retrieve the logical CPU count. */
+        }
+
+        return count;
+    }
+    #endif
+}
+/* END c89thread_cpu_count.h */
 
 
 /* BEG c89thread_allocation_callbacks.c */
