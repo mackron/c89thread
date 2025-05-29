@@ -1994,7 +1994,7 @@ int c89timespec_cmp(struct timespec tsA, struct timespec tsB)
 /* END c89thread_timespec.c */
 
 
-/* BEG c89thread_cpu_count.h */
+/* BEG c89thread_cpu_count.c */
 #if !defined(_WIN32)
     #if defined(__APPLE__) && defined(__MACH__)
         #include <sys/sysctl.h>  /* For sysctlbyname() to get CPU count. */
@@ -2037,7 +2037,7 @@ int c89thread_get_logical_cpu_count(void)
     }
     #endif
 }
-/* END c89thread_cpu_count.h */
+/* END c89thread_cpu_count.c */
 
 
 /* BEG c89thread_allocation_callbacks.c */
