@@ -105,6 +105,20 @@ typedef void* c89thread_handle;
     #define C89THREAD_POSIX
 #endif
 
+
+/* BEG c89thread_thread_local.h */
+#if defined(__cplusplus) && __cplusplus >= 201103L
+    #define C89THREAD_THREAD_LOCAL thread_local
+#elif defined(__GNUC__) || defined(__clang__) || defined(__TINYC__)
+    #define C89THREAD_THREAD_LOCAL __thread
+#elif defined(_MSC_VER) || defined(__DMC__) || defined(__BORLANDC__)
+    #define C89THREAD_THREAD_LOCAL __declspec(thread)
+#else
+    #define C89THREAD_THREAD_LOCAL NOT_SUPPORTED
+#endif
+/* END c89thread_thread_local.h */
+
+
 /* BEG c89thread_basic_types.h */
 #if defined(C89THREAD_POSIX)
     #ifndef C89THREAD_USE_PTHREAD
