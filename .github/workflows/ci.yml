@@ -1,0 +1,95 @@
+name: Compilation Checks
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  linux:
+    name: Linux (${{ matrix.compiler }}, ${{ matrix.config.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        config:
+          - name: "Default"
+            cmake_args: "-DC89THREAD_BUILD_EXAMPLES=ON -DC89THREAD_BUILD_TESTS=ON"
+          - name: "Force C++"
+            cmake_args: "-DC89THREAD_FORCE_CXX=ON -DC89THREAD_BUILD_EXAMPLES=ON -DC89THREAD_BUILD_TESTS=ON"
+          - name: "Force C89"
+            cmake_args: "-DC89THREAD_FORCE_C89=ON -DC89THREAD_BUILD_EXAMPLES=ON -DC89THREAD_BUILD_TESTS=ON"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake
+
+      - name: Setup compiler
+        run: |
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            sudo apt-get install -y clang
+            echo "CC=clang" >> $GITHUB_ENV
+            echo "CXX=clang++" >> $GITHUB_ENV
+          else
+            echo "CC=gcc" >> $GITHUB_ENV
+            echo "CXX=g++" >> $GITHUB_ENV
+          fi
+
+      - name: Configure CMake
+        run: cmake -B build ${{ matrix.config.cmake_args }}
+
+      - name: Build
+        run: cmake --build build --parallel $(nproc)
+
+  windows:
+    name: Windows (${{ matrix.compiler }}, ${{ matrix.config.name }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [msvc, mingw]
+        config:
+          - name: "Default"
+            cmake_args: "-DC89THREAD_BUILD_EXAMPLES=ON -DC89THREAD_BUILD_TESTS=ON"
+          - name: "Force C++"
+            cmake_args: "-DC89THREAD_FORCE_CXX=ON -DC89THREAD_BUILD_EXAMPLES=ON -DC89THREAD_BUILD_TESTS=ON"
+          - name: "Force C89"
+            cmake_args: "-DC89THREAD_FORCE_C89=ON -DC89THREAD_BUILD_EXAMPLES=ON -DC89THREAD_BUILD_TESTS=ON"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        if: matrix.compiler == 'msvc'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Setup MinGW
+        if: matrix.compiler == 'mingw'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-make
+
+      - name: Configure CMake (MSVC)
+        if: matrix.compiler == 'msvc'
+        run: cmake -B build ${{ matrix.config.cmake_args }}
+
+      - name: Configure CMake (MinGW)
+        if: matrix.compiler == 'mingw'
+        shell: msys2 {0}
+        run: cmake -B build -G "MinGW Makefiles" ${{ matrix.config.cmake_args }}
+
+      - name: Build (MSVC)
+        if: matrix.compiler == 'msvc'
+        run: cmake --build build --parallel
+
+      - name: Build (MinGW)
+        if: matrix.compiler == 'mingw'
+        shell: msys2 {0}
+        run: cmake --build build --parallel
