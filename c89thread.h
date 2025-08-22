@@ -1559,14 +1559,13 @@ static int c89pthread_mutex_timedlock(pthread_mutex_t* mutex, const struct times
 
 int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
 {
-    int result;
-
     if (mutex == NULL) {
         return c89thrd_error;
     }
 
     #ifdef C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
     {
+        int result;
         pthread_t currentThread;
 
         /* Optimized path for plain mutexes. */
