@@ -2,11 +2,12 @@ cmake_minimum_required(VERSION 3.14)
 project(c89thread VERSION 1.0)
 
 # Options
-option(C89THREAD_BUILD_EXAMPLES "Build c89thread examples" OFF)
-option(C89THREAD_BUILD_TESTS    "Build c89thread tests"    OFF)
-option(C89THREAD_BUILD_TOOLS    "Build c89thread tools"    OFF)
-option(C89THREAD_FORCE_CXX      "Force compilation as C++" OFF)
-option(C89THREAD_FORCE_C89      "Force compilation as C89" OFF)
+option(C89THREAD_BUILD_EXAMPLES             "Build c89thread examples"                OFF)
+option(C89THREAD_BUILD_TESTS                "Build c89thread tests"                   OFF)
+option(C89THREAD_BUILD_TOOLS                "Build c89thread tools"                   OFF)
+option(C89THREAD_FORCE_CXX                  "Force compilation as C++"                OFF)
+option(C89THREAD_FORCE_C89                  "Force compilation as C89"                OFF)
+option(C89THREAD_USE_MANUAL_RECURSIVE_MUTEX "Force the use of manual recursive mutex" OFF)
 
 # Construct compiler options.
 set(COMPILE_OPTIONS)
@@ -49,6 +50,9 @@ endif()
 # Construct compiler defines
 set(COMPILE_DEFINES)
 
+if(C89THREAD_USE_MANUAL_RECURSIVE_MUTEX)
+    list(APPEND COMPILE_DEFINES C89THREAD_USE_MANUAL_RECURSIVE_MUTEX)
+endif()
 
 # Link libraries
 set(COMMON_LIBRARIES)
