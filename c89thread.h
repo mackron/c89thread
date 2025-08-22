@@ -2293,6 +2293,9 @@ int c89timespec_cmp(struct timespec tsA, struct timespec tsB)
 /* BEG c89thread_cpu_count.c */
 #if !defined(_WIN32)
     #if defined(__APPLE__) && defined(__MACH__)
+        #if !defined(_DARWIN_C_SOURCE) && (defined(_XOPEN_SOURCE) || defined(_POSIX_C_SOURCE))
+        #define _DARWIN_C_SOURCE
+        #endif
         #include <sys/types.h>
         #include <sys/sysctl.h>  /* For sysctlbyname() to get CPU count. */
     #else
