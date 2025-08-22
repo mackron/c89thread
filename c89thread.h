@@ -69,6 +69,8 @@ using pthreads, you may need to link with `-lpthread`.
 extern "C" {
 #endif
 
+#include <stddef.h> /* For size_t. */
+
 typedef signed   int c89thread_int32;
 typedef unsigned int c89thread_uint32;
 #if (defined(_MSC_VER) && !defined(__clang__)) || defined(__BORLANDC__)
