@@ -128,15 +128,13 @@ typedef void* c89thread_handle;
     #endif
 
     /*
-    This is, hopefully, a temporary measure to get compilation working with the -std=c89 switch on
-    GCC and Clang. Unfortunately without this we get errors about the following functions not being
-    declared:
+    This sets up the necessary feature test macros to ensure pthread functions are properly
+    declared. This is particularly important for pthread_mutexattr_settype() and 
+    pthread_mutex_timedlock().
 
-        pthread_mutexattr_settype()
-
-    I am not sure yet how a fallback would work for pthread_mutexattr_settype(). It may just be
-    that it's fundamentally not compatible without explicit pthread support which would make the
-    _XOPEN_SOURCE define mandatory. Needs further investigation.
+    pthread_mutexattr_settype() is needed for native recursive mutex support. When this function
+    is not available (e.g., when compiling with -std=c89), c89thread falls back to a manual
+    recursive mutex implementation.
 
     In addition, pthread_mutex_timedlock() is only available since 2001 which is only enabled if
     _XOPEN_SOURCE is defined to something >= 600. If this is not the case, a suboptimal fallback
@@ -257,7 +255,28 @@ typedef struct
     int type;
 } c89mtx_t;
 #else
-typedef c89thread_pthread_mutex_t c89mtx_t;
+    /*
+    We may need to force the use of a manual recursive mutex which will happen when compiling
+    on very old compilers, or with `-std=c89`.
+    */
+    #ifndef C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
+        #if !defined(__STDC_VERSION__)  /* If __STDC_VERSION__ is not defined it means we're compiling in C89 mode. */
+            #define C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
+        #endif
+    #endif
+
+    #ifdef C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
+        typedef struct
+        {
+            c89thread_pthread_mutex_t mutex;    /* The underlying pthread mutex. */
+            c89thread_pthread_mutex_t guard;    /* Guard for metadata (owner and recursionCount). */
+            pthread_t owner;
+            int recursionCount;
+            int type;
+        } c89mtx_t;
+    #else
+        typedef c89thread_pthread_mutex_t c89mtx_t;
+    #endif
 #endif
 
 enum
@@ -1333,27 +1352,55 @@ int c89thrd_join(c89thrd_t thr, int* res)
 int c89mtx_init(c89mtx_t* mutex, int type)
 {
     int result;
-    pthread_mutexattr_t attr;   /* For specifying whether or not the mutex is recursive. */
 
     if (mutex == NULL) {
         return c89thrd_error;
     }
 
-    pthread_mutexattr_init(&attr);
-    if ((type & c89mtx_recursive) != 0) {
-        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-    } else {
-        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_NORMAL);     /* Will deadlock. Consistent with Win32. */
+    #ifdef C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
+    {
+        /* Initialize the main mutex */
+        result = pthread_mutex_init(&mutex->mutex, NULL);
+        if (result != 0) {
+            return c89thrd_error;
+        }
+        
+        /* For recursive mutexes, we need the guard mutex and metadata */
+        if ((type & c89mtx_recursive) != 0) {
+            if (pthread_mutex_init(&mutex->guard, NULL) != 0) {
+                pthread_mutex_destroy(&mutex->mutex);
+                return c89thrd_error;
+            }
+
+            mutex->owner = 0;  /* No owner initially. */
+            mutex->recursionCount = 0;
+        }
+        
+        mutex->type = type;
+        
+        return c89thrd_success;
     }
+    #else
+    {
+        pthread_mutexattr_t attr;   /* For specifying whether or not the mutex is recursive. */
 
-    result = pthread_mutex_init((pthread_mutex_t*)mutex, &attr);
-    pthread_mutexattr_destroy(&attr);
+        pthread_mutexattr_init(&attr);
+        if ((type & c89mtx_recursive) != 0) {
+            pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+        } else {
+            pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_NORMAL);     /* Will deadlock. Consistent with Win32. */
+        }
 
-    if (result != 0) {
-        return c89thrd_error;
+        result = pthread_mutex_init((pthread_mutex_t*)mutex, &attr);
+        pthread_mutexattr_destroy(&attr);
+
+        if (result != 0) {
+            return c89thrd_error;
+        }
+
+        return c89thrd_success;
     }
-
-    return c89thrd_success;
+    #endif
 }
 
 void c89mtx_destroy(c89mtx_t* mutex)
@@ -1362,7 +1409,20 @@ void c89mtx_destroy(c89mtx_t* mutex)
         return;
     }
 
-    pthread_mutex_destroy((pthread_mutex_t*)mutex);
+    #ifdef C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
+    {
+        /* Only destroy the guard mutex if it was initialized (for recursive mutexes) */
+        if ((mutex->type & c89mtx_recursive) != 0) {
+            pthread_mutex_destroy(&mutex->guard);
+        }
+
+        pthread_mutex_destroy(&mutex->mutex);
+    }
+    #else
+    {
+        pthread_mutex_destroy((pthread_mutex_t*)mutex);
+    }
+    #endif
 }
 
 int c89mtx_lock(c89mtx_t* mutex)
@@ -1373,12 +1433,68 @@ int c89mtx_lock(c89mtx_t* mutex)
         return c89thrd_error;
     }
 
-    result = pthread_mutex_lock((pthread_mutex_t*)mutex);
-    if (result != 0) {
-        return c89thrd_error;
-    }
+    #ifdef C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
+    {
+        pthread_t currentThread;
 
-    return c89thrd_success;
+        /* Optimized path for plain mutexes. */
+        if ((mutex->type & c89mtx_recursive) == 0) {
+            result = pthread_mutex_lock(&mutex->mutex);
+            if (result != 0) {
+                return c89thrd_error;
+            }
+
+            return c89thrd_success;
+        }
+
+        /* Getting here means it's a recursive mutex. */
+        currentThread = pthread_self();
+        
+        /* First, lock the guard mutex to safely access the metadata. */
+        result = pthread_mutex_lock(&mutex->guard);
+        if (result != 0) {
+            return c89thrd_error;
+        }
+
+        /* We can bomb out early if the current thread already owns this mutex. */
+        if (mutex->recursionCount > 0 && pthread_equal(mutex->owner, currentThread)) {
+            mutex->recursionCount += 1;
+            pthread_mutex_unlock(&mutex->guard);
+            return c89thrd_success;
+        }
+
+        /* The guard mutex needs to be unlocked before locking the main mutex or else we'll deadlock. */
+        pthread_mutex_unlock(&mutex->guard);
+        
+        result = pthread_mutex_lock(&mutex->mutex);
+        if (result != 0) {
+            return c89thrd_error;
+        }
+        
+        /* Update metadata. */
+        result = pthread_mutex_lock(&mutex->guard);
+        if (result != 0) {
+            pthread_mutex_unlock(&mutex->mutex);
+            return c89thrd_error;
+        }
+        
+        mutex->owner = currentThread;
+        mutex->recursionCount = 1;
+        
+        pthread_mutex_unlock(&mutex->guard);
+
+        return c89thrd_success;
+    }
+    #else
+    {
+        result = pthread_mutex_lock((pthread_mutex_t*)mutex);
+        if (result != 0) {
+            return c89thrd_error;
+        }
+
+        return c89thrd_success;
+    }
+    #endif
 }
 
 
@@ -1389,52 +1505,56 @@ int c89mtx_lock(c89mtx_t* mutex)
 
 static int c89pthread_mutex_timedlock(pthread_mutex_t* mutex, const struct timespec* time_point)
 {
-#if defined(__USE_XOPEN2K) && !defined(__APPLE__)
-    return pthread_mutex_timedlock((pthread_mutex_t*)mutex, time_point);
-#else
-    /*
-    Fallback implementation for when pthread_mutex_timedlock() is not avaialble. This is just a
-    naive loop which waits a bit of time before continuing.
-    */
-    #if !defined(C89THREAD_SUPPRESS_MUTEX_TIMEDLOCK_FALLBACK_WARNING) && !defined(__APPLE__)
-        #warning pthread_mutex_timedlock() is unavailable. Falling back to a suboptimal implementation. Set _XOPEN_SOURCE to >= 600 to use the native implementation of pthread_mutex_timedlock(). Use C89THREAD_SUPPRESS_MUTEX_TIMEDLOCK_FALLBACK_WARNING to suppress this warning.
-    #endif
-
-    int result;
-
-    if (time_point == NULL) {
-        return c89thrd_error;
+    #if defined(__USE_XOPEN2K) && !defined(__APPLE__)
+    {
+        return pthread_mutex_timedlock((pthread_mutex_t*)mutex, time_point);
     }
+    #else
+    {
+        /*
+        Fallback implementation for when pthread_mutex_timedlock() is not avaialble. This is just a
+        naive loop which waits a bit of time before continuing.
+        */
+        #if !defined(C89THREAD_SUPPRESS_MUTEX_TIMEDLOCK_FALLBACK_WARNING) && !defined(__APPLE__)
+            #warning pthread_mutex_timedlock() is unavailable. Falling back to a suboptimal implementation. Set _XOPEN_SOURCE to >= 600 to use the native implementation of pthread_mutex_timedlock(). Use C89THREAD_SUPPRESS_MUTEX_TIMEDLOCK_FALLBACK_WARNING to suppress this warning.
+        #endif
 
-    for (;;) {
-        result = pthread_mutex_trylock((pthread_mutex_t*)mutex);
-        if (result == EBUSY) {
-            struct timespec tsNow;
-            c89timespec_get(&tsNow, TIME_UTC);
+        int result;
 
-            if (c89timespec_cmp(tsNow, *time_point) > 0) {
-                result = ETIMEDOUT;
-                break;
-            } else {
-                /* Have not yet timed out. Need to wait a bit and then try again. */
-                c89thrd_sleep_timespec(c89timespec_nanoseconds(C89THREAD_TIMEDLOCK_WAIT_TIME_IN_NANOSECONDS));
-                continue;
-            }
-        } else {
-            break;
-        }
-    }
-
-    if (result == 0) {
-        return c89thrd_success;
-    } else {
-        if (result == ETIMEDOUT) {
-            return c89thrd_timedout;
-        } else {
+        if (time_point == NULL) {
             return c89thrd_error;
         }
+
+        for (;;) {
+            result = pthread_mutex_trylock((pthread_mutex_t*)mutex);
+            if (result == EBUSY) {
+                struct timespec tsNow;
+                c89timespec_get(&tsNow, TIME_UTC);
+
+                if (c89timespec_cmp(tsNow, *time_point) > 0) {
+                    result = ETIMEDOUT;
+                    break;
+                } else {
+                    /* Have not yet timed out. Need to wait a bit and then try again. */
+                    c89thrd_sleep_timespec(c89timespec_nanoseconds(C89THREAD_TIMEDLOCK_WAIT_TIME_IN_NANOSECONDS));
+                    continue;
+                }
+            } else {
+                break;
+            }
+        }
+
+        if (result == 0) {
+            return c89thrd_success;
+        } else {
+            if (result == ETIMEDOUT) {
+                return c89thrd_timedout;
+            } else {
+                return c89thrd_error;
+            }
+        }
     }
-#endif
+    #endif
 }
 
 int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
@@ -1445,16 +1565,62 @@ int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
         return c89thrd_error;
     }
 
-    result = c89pthread_mutex_timedlock((pthread_mutex_t*)mutex, time_point);
-    if (result != 0) {
-        if (result == ETIMEDOUT) {
-            return c89thrd_timedout;
+    #ifdef C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
+    {
+        pthread_t currentThread;
+
+        /* Optimized path for plain mutexes. */
+        if ((mutex->type & c89mtx_recursive) == 0) {
+            result = c89pthread_mutex_timedlock(&mutex->mutex, time_point);
+            if (result != c89thrd_success) {
+                return result;
+            }
+
+            return c89thrd_success;
+        }
+        
+        /* Getting here means it's a recursive mutex. */
+        currentThread = pthread_self();
+        
+        /* First, lock the guard mutex to safely access the metadata. */
+        result = pthread_mutex_lock(&mutex->guard);
+        if (result != 0) {
+            return c89thrd_error;
+        }
+        
+        /* We can bomb out early if the current thread already owns this mutex. */
+        if (mutex->recursionCount > 0 && pthread_equal(mutex->owner, currentThread)) {
+            mutex->recursionCount += 1;
+            pthread_mutex_unlock(&mutex->guard);
+            return c89thrd_success;
+        }
+        
+        /* The guard mutex needs to be unlocked before locking the main mutex or else we'll deadlock. */
+        pthread_mutex_unlock(&mutex->guard);
+        
+        result = c89pthread_mutex_timedlock(&mutex->mutex, time_point);
+        if (result != c89thrd_success) {
+            return result;
         }
 
-        return c89thrd_error;
-    }
+        /* Update metadata. */
+        if (pthread_mutex_lock(&mutex->guard) != 0) {
+            pthread_mutex_unlock(&mutex->mutex);
+            return c89thrd_error;
+        }
+        
+        mutex->owner = currentThread;
+        mutex->recursionCount = 1;
+        
+        pthread_mutex_unlock(&mutex->guard);
 
-    return c89thrd_success;
+        return c89thrd_success;
+    }
+    #else
+    {
+        return c89pthread_mutex_timedlock((pthread_mutex_t*)mutex, time_point);
+    }
+    #endif
 }
 
 int c89mtx_trylock(c89mtx_t* mutex)
@@ -1465,16 +1631,79 @@ int c89mtx_trylock(c89mtx_t* mutex)
         return c89thrd_error;
     }
 
-    result = pthread_mutex_trylock((pthread_mutex_t*)mutex);
-    if (result != 0) {
-        if (result == EBUSY) {
-            return c89thrd_busy;
+    #ifdef C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
+    {
+        pthread_t currentThread;
+
+        /* Optimized path for plain mutexes. */
+        if ((mutex->type & c89mtx_recursive) == 0) {
+            result = pthread_mutex_trylock(&mutex->mutex);
+            if (result != 0) {
+                if (result == EBUSY) {
+                    return c89thrd_busy;
+                }
+
+                return c89thrd_error;
+            }
+
+            return c89thrd_success;
         }
 
-        return c89thrd_error;
-    }
+        /* Getting here means it's a recursive mutex. */
+        currentThread = pthread_self();
+        
+        /* Lock the guard mutex to safely access the metadata. */
+        result = pthread_mutex_lock(&mutex->guard);
+        if (result != 0) {
+            return c89thrd_error;
+        }
+        
+        /* We can bomb out early if the current thread already owns this mutex. */
+        if (mutex->recursionCount > 0 && pthread_equal(mutex->owner, currentThread)) {
+            mutex->recursionCount += 1;
+            pthread_mutex_unlock(&mutex->guard);
+            return c89thrd_success;
+        }
+        
+        /* The guard mutex needs to be unlocked before locking the main mutex or else we'll deadlock. */
+        pthread_mutex_unlock(&mutex->guard);
+        
+        result = pthread_mutex_trylock(&mutex->mutex);
+        if (result != 0) {
+            if (result == EBUSY) {
+                return c89thrd_busy;
+            }
 
-    return c89thrd_success;
+            return c89thrd_error;
+        }
+        
+        /* Update metadata. */
+        if (pthread_mutex_lock(&mutex->guard) != 0) {
+            pthread_mutex_unlock(&mutex->mutex);
+            return c89thrd_error;
+        }
+        
+        mutex->owner = currentThread;
+        mutex->recursionCount = 1;
+        
+        pthread_mutex_unlock(&mutex->guard);
+
+        return c89thrd_success;
+    }
+    #else
+    {
+        result = pthread_mutex_trylock((pthread_mutex_t*)mutex);
+        if (result != 0) {
+            if (result == EBUSY) {
+                return c89thrd_busy;
+            }
+
+            return c89thrd_error;
+        }
+
+        return c89thrd_success;
+    }
+    #endif
 }
 
 int c89mtx_unlock(c89mtx_t* mutex)
@@ -1485,12 +1714,64 @@ int c89mtx_unlock(c89mtx_t* mutex)
         return c89thrd_error;
     }
 
-    result = pthread_mutex_unlock((pthread_mutex_t*)mutex);
-    if (result != 0) {
-        return c89thrd_error;
-    }
+    #ifdef C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
+    {
+        pthread_t currentThread;
 
-    return c89thrd_success;
+        /* Optimized path for plain mutexes. */
+        if ((mutex->type & c89mtx_recursive) == 0) {
+            result = pthread_mutex_unlock(&mutex->mutex);
+            if (result != 0) {
+                return c89thrd_error;
+            }
+
+            return c89thrd_success;
+        }
+        
+        /* Getting here means it's a recursive mutex. */
+        currentThread = pthread_self();
+        
+        /* Lock the guard mutex to safely access the metadata */
+        result = pthread_mutex_lock(&mutex->guard);
+        if (result != 0) {
+            return c89thrd_error;
+        }
+        
+        /* Check if the current thread owns the mutex */
+        if (mutex->recursionCount == 0 || !pthread_equal(mutex->owner, currentThread)) {
+            /* Getting here means we are trying to unlock a mutex that is not owned by this thread. Bomb out. */
+            pthread_mutex_unlock(&mutex->guard);
+            return c89thrd_error;
+        }
+        
+        mutex->recursionCount -= 1;
+
+        if (mutex->recursionCount == 0) {
+            /* Last unlock. Clear ownership and unlock the main mutex. */
+            mutex->owner = 0;
+            pthread_mutex_unlock(&mutex->guard);
+
+            result = pthread_mutex_unlock(&mutex->mutex);
+            if (result != 0) {
+                return c89thrd_error;
+            }
+        } else {
+            /* Still recursively locked, just unlock the guard mutex. */
+            pthread_mutex_unlock(&mutex->guard);
+        }
+        
+        return c89thrd_success;
+    }
+    #else
+    {
+        result = pthread_mutex_unlock((pthread_mutex_t*)mutex);
+        if (result != 0) {
+            return c89thrd_error;
+        }
+
+        return c89thrd_success;
+    }
+    #endif
 }
 
 
