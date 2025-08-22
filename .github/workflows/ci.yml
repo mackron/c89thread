@@ -7,6 +7,7 @@ on:
     branches: [master]
 
 jobs:
+# Linux job
   linux:
     name: Linux (${{ matrix.compiler }}, ${{ matrix.config.name }})
     runs-on: ubuntu-latest
@@ -21,6 +22,8 @@ jobs:
             cmake_args: "-DC89THREAD_FORCE_CXX=ON -DC89THREAD_BUILD_EXAMPLES=ON -DC89THREAD_BUILD_TESTS=ON"
           - name: "Force C89"
             cmake_args: "-DC89THREAD_FORCE_C89=ON -DC89THREAD_BUILD_EXAMPLES=ON -DC89THREAD_BUILD_TESTS=ON"
+          - name: "Manual Recursive Mutex"
+            cmake_args: "-DC89THREAD_USE_MANUAL_RECURSIVE_MUTEX=ON -DC89THREAD_BUILD_EXAMPLES=ON -DC89THREAD_BUILD_TESTS=ON"
     steps:
       - uses: actions/checkout@v4
 
@@ -44,6 +47,7 @@ jobs:
       - name: Build
         run: cmake --build build --parallel $(nproc)
 
+# Windows job
   windows:
     name: Windows (${{ matrix.compiler }}, ${{ matrix.config.name }})
     runs-on: windows-latest
@@ -93,3 +97,28 @@ jobs:
         if: matrix.compiler == 'mingw'
         shell: msys2 {0}
         run: cmake --build build --parallel
+
+# macOS job
+  macos:
+    name: macOS (${{ matrix.config.name }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: "Default"
+            cmake_args: "-DC89THREAD_BUILD_EXAMPLES=ON -DC89THREAD_BUILD_TESTS=ON"
+          - name: "Force C++"
+            cmake_args: "-DC89THREAD_FORCE_CXX=ON -DC89THREAD_BUILD_EXAMPLES=ON -DC89THREAD_BUILD_TESTS=ON"
+          - name: "Force C89"
+            cmake_args: "-DC89THREAD_FORCE_C89=ON -DC89THREAD_BUILD_EXAMPLES=ON -DC89THREAD_BUILD_TESTS=ON"
+          - name: "Manual Recursive Mutex"
+            cmake_args: "-DC89THREAD_USE_MANUAL_RECURSIVE_MUTEX=ON -DC89THREAD_BUILD_EXAMPLES=ON -DC89THREAD_BUILD_TESTS=ON"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: cmake -B build ${{ matrix.config.cmake_args }}
+
+      - name: Build
+        run: cmake --build build --parallel $(sysctl -n hw.ncpu)
