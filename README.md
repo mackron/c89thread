@@ -35,6 +35,13 @@ supported on older compilers. Therefore, c89thread implements some helper functi
 the timespec object. For known compilers that do not support the timespec struct, c89thread will
 define it.
 
+In some configurations, particularly with old compilers and `-std=c89`, c89thread may need to use
+suboptimal workarounds to make things work. You can define `C89THREAD_ENABLE_SUBOPTIMAL_WARNINGS` to
+throw a warning in these situations so you can be aware of when your build environment is hitting it.
+The first workaround regards recursive mutexes. When not supported by the compiler, c89thread will
+fall back to a manual recursive mutex implementation. The other is `c89mtx_timedlock()` which will
+use a busy-wait loop in terms of `c89mtx_trylock()` and `c89thread_sleep()`.
+
 Sometimes c89thread will need to allocate memory internally. You can set a custom allocator at the
 global level with `c89thread_set_allocation_callbacks()`. This is not thread safe, but can be called
 from any thread so long as you do your own synchronization. Threads can be created with an extended

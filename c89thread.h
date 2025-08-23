@@ -58,10 +58,10 @@ Building
 ========
 c89thread is a single file library. To use it, do something like the following in one .c file.
 
-    ```c
-    #define C89THREAD_IMPLEMENTATION
-    #include "c89thread.h"
-    ```
+```c
+#define C89THREAD_IMPLEMENTATION
+#include "c89thread.h"
+```
 
 You can then #include this file in other parts of the program as you would with any other header file.
 
