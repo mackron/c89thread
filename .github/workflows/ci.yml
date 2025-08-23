@@ -122,3 +122,75 @@ jobs:
 
       - name: Build
         run: cmake --build build --parallel $(sysctl -n hw.ncpu)
+
+# Android job
+  android:
+    name: Android (${{ matrix.arch }}, ${{ matrix.config.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64-v8a, armeabi-v7a, x86_64]
+        config:
+          - name: "Default"
+            cmake_args: "-DC89THREAD_BUILD_EXAMPLES=ON -DC89THREAD_BUILD_TESTS=ON"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r25c
+      - name: Configure CMake
+        run: |
+          TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake
+          cmake -B build \
+            -DCMAKE_TOOLCHAIN_FILE=$TOOLCHAIN_FILE \
+            -DANDROID_ABI=${{ matrix.arch }} \
+            -DANDROID_PLATFORM=android-21 \
+            ${{ matrix.config.cmake_args }}
+      - name: Build
+        run: cmake --build build --parallel $(nproc)
+
+# FreeBSD job
+  freebsd:
+    name: FreeBSD (${{ matrix.config.name }})
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {name: "Default", cmake_args: "-DC89THREAD_BUILD_EXAMPLES=ON -DC89THREAD_BUILD_TESTS=ON"}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test on FreeBSD
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg install -y cmake
+          run: |
+            cmake -B build ${{ matrix.config.cmake_args }}
+            cmake --build build --parallel $(sysctl -n hw.ncpu)
+
+# OpenBSD job
+  openbsd:
+    name: OpenBSD (${{ matrix.config.name }})
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {name: "Default", cmake_args: "-DC89THREAD_BUILD_EXAMPLES=ON -DC89THREAD_BUILD_TESTS=ON"}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test on OpenBSD
+        uses: vmactions/openbsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg_add cmake
+          run: |
+            cmake -B build ${{ matrix.config.cmake_args }}
+            cmake --build build --parallel $(sysctl -n hw.ncpu)
