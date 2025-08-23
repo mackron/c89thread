@@ -103,7 +103,7 @@ jobs:
 
       - name: Run tests (MSVC)
         if: matrix.compiler == 'msvc'
-        run: cd build && ctest --output-on-failure --parallel
+        run: cd build && ctest --output-on-failure --parallel -C Debug
 
       - name: Run tests (MinGW)
         if: matrix.compiler == 'mingw'
