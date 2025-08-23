@@ -776,12 +776,18 @@ int c89mtx_lock(c89mtx_t* mutex)
 int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
 {
     DWORD result;
+    struct timespec tsNow;
 
     if (mutex == NULL || time_point == NULL) {
         return c89thrd_error;
     }
 
-    result = WaitForSingleObject((HANDLE)mutex->handle, (DWORD)c89timespec_diff_milliseconds(*time_point, c89timespec_now()));
+    tsNow = c89timespec_now();
+    if (c89timespec_cmp(tsNow, *time_point) > 0) {
+        return c89thrd_timedout;
+    }
+
+    result = WaitForSingleObject((HANDLE)mutex->handle, (DWORD)c89timespec_diff_milliseconds(*time_point, tsNow));
     if (result != WAIT_OBJECT_0) {
         if (result == WAIT_TIMEOUT) {
             return c89thrd_timedout;
