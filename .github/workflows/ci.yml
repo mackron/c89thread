@@ -194,3 +194,25 @@ jobs:
           run: |
             cmake -B build ${{ matrix.config.cmake_args }}
             cmake --build build --parallel $(sysctl -n hw.ncpu)
+
+  # NetBSD job
+  netbsd:
+    name: NetBSD (${{ matrix.config.name }})
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {name: "Default", cmake_args: "-DC89THREAD_BUILD_EXAMPLES=ON -DC89THREAD_BUILD_TESTS=ON"}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test on NetBSD
+        uses: vmactions/netbsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkgin -y install cmake
+          run: |
+            cmake -B build ${{ matrix.config.cmake_args }}
+            cmake --build build --parallel $(sysctl -n hw.ncpu)
