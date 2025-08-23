@@ -86,6 +86,10 @@ target_link_libraries     (c89thread PRIVATE c89thread_common)
 if(C89THREAD_BUILD_TESTS)
     enable_testing()
 
+    add_executable(c89thread_test tests/c89thread_test.c)
+    target_link_libraries(c89thread_test PRIVATE c89thread)
+    add_test(NAME c89thread_test COMMAND c89thread_test)
+
     add_executable(c89thread_basic tests/c89thread_basic.c)
     target_link_libraries(c89thread_basic PRIVATE c89thread)
     add_test(NAME c89thread_basic COMMAND c89thread_basic)
