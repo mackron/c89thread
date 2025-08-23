@@ -37,6 +37,13 @@ supported on older compilers. Therefore, c89thread implements some helper functi
 the timespec object. For known compilers that do not support the timespec struct, c89thread will
 define it.
 
+In some configurations, particularly with old compilers and `-std=c89`, c89thread may need to use
+suboptimal workarounds to make things work. You can define `C89THREAD_ENABLE_SUBOPTIMAL_WARNINGS` to
+throw a warning in these situations so you can be aware of when your build environment is hitting it.
+The first workaround regards recursive mutexes. When not supported by the compiler, c89thread will
+fall back to a manual recursive mutex implementation. The other is `c89mtx_timedlock()` which will
+use a busy-wait loop in terms of `c89mtx_trylock()` and `c89thread_sleep()`.
+
 Sometimes c89thread will need to allocate memory internally. You can set a custom allocator at the
 global level with `c89thread_set_allocation_callbacks()`. This is not thread safe, but can be called
 from any thread so long as you do your own synchronization. Threads can be created with an extended
@@ -125,32 +132,6 @@ typedef void* c89thread_handle;
 #if defined(C89THREAD_POSIX)
     #ifndef C89THREAD_USE_PTHREAD
     #define C89THREAD_USE_PTHREAD
-    #endif
-
-    /*
-    This sets up the necessary feature test macros to ensure pthread functions are properly
-    declared. This is particularly important for pthread_mutexattr_settype() and 
-    pthread_mutex_timedlock().
-
-    pthread_mutexattr_settype() is needed for native recursive mutex support. When this function
-    is not available (e.g., when compiling with -std=c89), c89thread falls back to a manual
-    recursive mutex implementation.
-
-    In addition, pthread_mutex_timedlock() is only available since 2001 which is only enabled if
-    _XOPEN_SOURCE is defined to something >= 600. If this is not the case, a suboptimal fallback
-    will be used instead which calls pthread_mutex_trylock() in a loop, with a sleep after each
-    loop iteration. By setting _XOPEN_SOURCE here we reduce the likelyhood of users accidentally
-    falling back to the suboptimal fallback.
-
-    I'm setting this to the latest version here (700) just in case this file is included at the top
-    of a source file which later on depends on some POSIX functions from later revisions.
-    */
-    #ifndef _XOPEN_SOURCE
-    #define _XOPEN_SOURCE   700
-    #else
-        #if _XOPEN_SOURCE < 500
-        #error _XOPEN_SOURCE must be >= 500. c89thread is not usable.
-        #endif
     #endif
 
     #ifndef C89THREAD_NO_PTHREAD_IN_HEADER
@@ -1520,8 +1501,8 @@ static int c89pthread_mutex_timedlock(pthread_mutex_t* mutex, const struct times
         Fallback implementation for when pthread_mutex_timedlock() is not avaialble. This is just a
         naive loop which waits a bit of time before continuing.
         */
-        #if !defined(C89THREAD_SUPPRESS_MUTEX_TIMEDLOCK_FALLBACK_WARNING) && !defined(__APPLE__)
-            #warning pthread_mutex_timedlock() is unavailable. Falling back to a suboptimal implementation. Set _XOPEN_SOURCE to >= 600 to use the native implementation of pthread_mutex_timedlock(). Use C89THREAD_SUPPRESS_MUTEX_TIMEDLOCK_FALLBACK_WARNING to suppress this warning.
+        #if defined(C89THREAD_ENABLE_SUBOPTIMAL_WARNINGS) && !defined(__APPLE__)
+            #warning pthread_mutex_timedlock() is unavailable. Falling back to a suboptimal implementation.
         #endif
 
         int result;
