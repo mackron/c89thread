@@ -1,4 +1,4 @@
-name: Compilation Checks
+name: Build and Test
 
 on:
   push:
@@ -46,6 +46,9 @@ jobs:
 
       - name: Build
         run: cmake --build build --parallel $(nproc)
+
+      - name: Run tests
+        run: cd build && ctest --output-on-failure --parallel $(nproc)
 
 # Windows job
   windows:
@@ -98,6 +101,15 @@ jobs:
         shell: msys2 {0}
         run: cmake --build build --parallel
 
+      - name: Run tests (MSVC)
+        if: matrix.compiler == 'msvc'
+        run: cd build && ctest --output-on-failure --parallel
+
+      - name: Run tests (MinGW)
+        if: matrix.compiler == 'mingw'
+        shell: msys2 {0}
+        run: cd build && ctest --output-on-failure --parallel
+
 # macOS job
   macos:
     name: macOS (${{ matrix.config.name }})
@@ -122,6 +134,9 @@ jobs:
 
       - name: Build
         run: cmake --build build --parallel $(sysctl -n hw.ncpu)
+
+      - name: Run tests
+        run: cd build && ctest --output-on-failure --parallel $(sysctl -n hw.ncpu)
 
 # Android job
   android:
@@ -172,6 +187,7 @@ jobs:
           run: |
             cmake -B build ${{ matrix.config.cmake_args }}
             cmake --build build --parallel $(sysctl -n hw.ncpu)
+            cd build && ctest --output-on-failure --parallel $(sysctl -n hw.ncpu)
 
 # OpenBSD job
   openbsd:
@@ -194,6 +210,7 @@ jobs:
           run: |
             cmake -B build ${{ matrix.config.cmake_args }}
             cmake --build build --parallel $(sysctl -n hw.ncpu)
+            cd build && ctest --output-on-failure --parallel $(sysctl -n hw.ncpu)
 
   # NetBSD job
   netbsd:
@@ -216,3 +233,4 @@ jobs:
           run: |
             cmake -B build ${{ matrix.config.cmake_args }}
             cmake --build build
+            cd build && ctest --output-on-failure
