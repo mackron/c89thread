@@ -56,14 +56,19 @@ endif()
 
 # Link libraries
 set(COMMON_LIBRARIES)
-set(COMMON_INCLUDE_DIRS)
+
+if (UNIX)
+    find_library(LIB_PTHREAD NAMES pthread)
+    if(LIB_PTHREAD)
+        list(APPEND COMMON_LINK_LIBRARIES ${LIB_PTHREAD}) # Some compilers will not link to pthread by default so list it here just in case.
+    endif()
+endif()
 
 
 # Common interface
 add_library(c89thread_common INTERFACE)
 target_compile_options    (c89thread_common INTERFACE ${COMPILE_OPTIONS})
 target_link_libraries     (c89thread_common INTERFACE ${COMMON_LIBRARIES})
-target_include_directories(c89thread_common INTERFACE ${COMMON_INCLUDE_DIRS})
 target_compile_definitions(c89thread_common INTERFACE ${COMPILE_DEFINES})
 
 
