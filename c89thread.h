@@ -1089,7 +1089,9 @@ static int c89thrd_result_from_errno(int e)
     {
         case 0:         return c89thrd_success;
         case ENOMEM:    return c89thrd_nomem;
+        #ifdef ETIME
         case ETIME:     return c89thrd_timedout;
+        #endif
         case ETIMEDOUT: return c89thrd_timedout;
         case EBUSY:     return c89thrd_busy;
     }
