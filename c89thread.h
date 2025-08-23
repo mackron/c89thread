@@ -1501,7 +1501,7 @@ static int c89pthread_mutex_timedlock(pthread_mutex_t* mutex, const struct times
 {
     #if defined(__USE_XOPEN2K) && !defined(__APPLE__)
     {
-        return pthread_mutex_timedlock((pthread_mutex_t*)mutex, time_point);
+        return c89thrd_result_from_errno(pthread_mutex_timedlock((pthread_mutex_t*)mutex, time_point));
     }
     #else
     {
