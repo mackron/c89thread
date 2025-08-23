@@ -259,10 +259,15 @@ typedef struct
     We may need to force the use of a manual recursive mutex which will happen when compiling
     on very old compilers, or with `-std=c89`.
     */
-    #ifndef C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
-        #if !defined(__STDC_VERSION__)  /* If __STDC_VERSION__ is not defined it means we're compiling in C89 mode. */
-            #define C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
-        #endif
+
+    /* If __STDC_VERSION__ is not defined it means we're compiling in C89 mode. */
+    #if !defined(C89THREAD_USE_MANUAL_RECURSIVE_MUTEX) && !defined(__STDC_VERSION__)
+        #define C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
+    #endif
+
+    /* This is for checking if PTHREAD_MUTEX_RECURSIVE is available. */
+    #if !defined(C89THREAD_USE_MANUAL_RECURSIVE_MUTEX) && (!defined(__USE_UNIX98) && !defined(__USE_XOPEN2K8))
+        #define C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
     #endif
 
     #ifdef C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
