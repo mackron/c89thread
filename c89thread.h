@@ -2148,7 +2148,7 @@ int c89timespec_get(struct timespec* ts, int base)
         * If _POSIX_C_SOURCE >= 199309L, use clock_gettime(CLOCK_REALTIME, ...); else
         * Fall back to gettimeofday().
     */
-    #if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__APPLE__)
+    #if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__APPLE__) && !defined(__ANDROID__)
     {
         return timespec_get(ts, base);
     }
