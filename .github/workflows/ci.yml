@@ -215,4 +215,4 @@ jobs:
             /usr/sbin/pkg_add cmake
           run: |
             cmake -B build ${{ matrix.config.cmake_args }}
-            cmake --build build --parallel $(sysctl -n hw.ncpu)
+            cmake --build build
