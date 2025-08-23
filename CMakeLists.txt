@@ -60,7 +60,7 @@ set(COMMON_LIBRARIES)
 if (UNIX)
     find_library(LIB_PTHREAD NAMES pthread)
     if(LIB_PTHREAD)
-        list(APPEND COMMON_LINK_LIBRARIES ${LIB_PTHREAD}) # Some compilers will not link to pthread by default so list it here just in case.
+        list(APPEND COMMON_LIBRARIES ${LIB_PTHREAD}) # Some compilers will not link to pthread by default so list it here just in case.
     endif()
 endif()
 
