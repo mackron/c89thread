@@ -530,7 +530,7 @@ int c89thrd_equal(c89thrd_t lhs, c89thrd_t rhs)
     not sure how to do this any other way, so I'm falling back to a simple handle comparison. I don't
     think this is right, though. If anybody has any suggestions, let me know.
 
-    TODO: In c89thrd_create_ex(), we're getting the threadID from CreateThread() but not using it.
+    TODO: In c89thrd_create_ex(), we're getting the thread ID from CreateThread() but not using it.
     Could we make use of that? When GetThreadId() is not available, maybe fall back to that?
     */
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= 0x0502
