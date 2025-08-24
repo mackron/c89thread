@@ -136,16 +136,19 @@ typedef void* c89thread_handle;
 
     #ifndef C89THREAD_NO_PTHREAD_IN_HEADER
         #include <pthread.h>
-        typedef pthread_t           c89thread_pthread_t;
-        typedef pthread_mutex_t     c89thread_pthread_mutex_t;
-        typedef pthread_cond_t      c89thread_pthread_cond_t;
+        typedef pthread_t         c89thread_pthread_t;
+        typedef pthread_mutex_t   c89thread_pthread_mutex_t;
+        typedef pthread_cond_t    c89thread_pthread_cond_t;
     #else
-        typedef c89thread_uintptr   c89thread_pthread_t;
-        typedef union               c89thread_pthread_mutex_t { char __data[40]; c89thread_uint64 __alignment; } c89thread_pthread_mutex_t;
-        typedef union               c89thread_pthread_cond_t  { char __data[48]; c89thread_uint64 __alignment; } c89thread_pthread_cond_t;
+        typedef c89thread_uintptr c89thread_pthread_t;
+        typedef union             c89thread_pthread_mutex_t { char __data[40]; c89thread_uint64 __alignment; } c89thread_pthread_mutex_t;
+        typedef union             c89thread_pthread_cond_t  { char __data[48]; c89thread_uint64 __alignment; } c89thread_pthread_cond_t;
     #endif
 #endif
+/* END c89thread_basic_types.h */
 
+
+/* BEG c89thread_results.h */
 enum
 {
     c89thrd_success  =  0,
@@ -155,7 +158,7 @@ enum
     c89thrd_busy     = -4,
     c89thrd_error    = -5
 };
-/* END c89thread_basic_types.h */
+/* END c89thread_results.h */
 
 
 /* BEG c89thread_allocation_callbacks.h */
@@ -228,13 +231,13 @@ int c89thrd_detach(c89thrd_t thr);
 int c89thrd_join(c89thrd_t thr, int* res);
 
 
-/* c89mtx_t */
+/* BEG c89thread_mtx.h */
 #if defined(C89THREAD_WIN32)
-typedef struct
-{
-    c89thread_handle handle;    /* HANDLE, CreateMutex(), CreateEvent() */
-    int type;
-} c89mtx_t;
+    typedef struct
+    {
+        c89thread_handle handle;    /* HANDLE, CreateMutex(), CreateEvent() */
+        int type;
+    } c89mtx_t;
 #else
     /*
     We may need to force the use of a manual recursive mutex which will happen when compiling
@@ -278,6 +281,7 @@ int c89mtx_lock(c89mtx_t* mutex);
 int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point);
 int c89mtx_trylock(c89mtx_t* mutex);
 int c89mtx_unlock(c89mtx_t* mutex);
+/* END c89thread_mtx.h */
 
 
 /* c89cnd_t */
@@ -715,6 +719,7 @@ int c89thrd_join(c89thrd_t thr, int* res)
 }
 
 
+/* BEG c89mtx_win32.c */
 int c89mtx_init(c89mtx_t* mutex, int type)
 {
     HANDLE hMutex;
@@ -773,6 +778,7 @@ int c89mtx_lock(c89mtx_t* mutex)
     return c89thrd_success;
 }
 
+/* BEG c89mtx_timedlock_win32.c */
 int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
 {
     DWORD result;
@@ -798,7 +804,9 @@ int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
 
     return c89thrd_success;
 }
+/* END c89mtx_timedlock_win32.c */
 
+/* BEG c89mtx_trylock_win32.c */
 int c89mtx_trylock(c89mtx_t* mutex)
 {
     DWORD result;
@@ -814,6 +822,7 @@ int c89mtx_trylock(c89mtx_t* mutex)
 
     return c89thrd_success;
 }
+/* END c89mtx_trylock_win32.c */
 
 int c89mtx_unlock(c89mtx_t* mutex)
 {
@@ -835,6 +844,7 @@ int c89mtx_unlock(c89mtx_t* mutex)
 
     return c89thrd_success;
 }
+/* END c89mtx_win32.c */
 
 
 /* BEG c89cnd_win32.c */
@@ -1342,7 +1352,7 @@ int c89thrd_join(c89thrd_t thr, int* res)
 }
 
 
-
+/* BEG c89mtx_pthread.c */
 int c89mtx_init(c89mtx_t* mutex, int type)
 {
     int result;
@@ -1491,7 +1501,7 @@ int c89mtx_lock(c89mtx_t* mutex)
     #endif
 }
 
-
+/* BEG c89mtx_timedlock_pthread.c */
 /* I'm not entirely sure what the best wait time would be, so making it configurable. Defaulting to 1 microsecond. */
 #ifndef C89THREAD_TIMEDLOCK_WAIT_TIME_IN_NANOSECONDS
 #define C89THREAD_TIMEDLOCK_WAIT_TIME_IN_NANOSECONDS    1000
@@ -1615,7 +1625,9 @@ int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
     }
     #endif
 }
+/* END c89mtx_timedlock_pthread.c */
 
+/* BEG c89mtx_trylock_pthread.c */
 int c89mtx_trylock(c89mtx_t* mutex)
 {
     int result;
@@ -1698,6 +1710,7 @@ int c89mtx_trylock(c89mtx_t* mutex)
     }
     #endif
 }
+/* END c89mtx_trylock_pthread.c */
 
 int c89mtx_unlock(c89mtx_t* mutex)
 {
@@ -1766,6 +1779,7 @@ int c89mtx_unlock(c89mtx_t* mutex)
     }
     #endif
 }
+/* END c89mtx_pthread.c */
 
 
 /* BEG c89cnd_pthread.c */
