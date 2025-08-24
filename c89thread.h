@@ -256,7 +256,7 @@ typedef struct
         {
             c89thread_pthread_mutex_t mutex;    /* The underlying pthread mutex. */
             c89thread_pthread_mutex_t guard;    /* Guard for metadata (owner and recursionCount). */
-            pthread_t owner;
+            c89thread_pthread_t owner;
             int recursionCount;
             int type;
         } c89mtx_t;
