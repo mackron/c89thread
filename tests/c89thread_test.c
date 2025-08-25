@@ -1,6 +1,7 @@
 #define C89THREAD_IMPLEMENTATION
 #include "c89thread.h"
 
+/* BEG c89thread_test.c */
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
@@ -91,11 +92,13 @@ void c89thread_test_print_local_result(c89thread_test* pTest, int level)
 
 void c89thread_test_print_child_results(c89thread_test* pTest, int level)
 {
+    c89thread_test* pChild;
+
     if (pTest == NULL) {
         return;
     }
 
-    c89thread_test* pChild = pTest->pFirstChild;
+    pChild = pTest->pFirstChild;
     while (pChild != NULL) {
         c89thread_test_print_local_result(pChild, level);
         c89thread_test_print_child_results(pChild, level + 1);
@@ -165,6 +168,7 @@ void c89thread_test_print_summary(c89thread_test* pTest)
     c89thread_test_count(pTest, &testCount, &passedCount);
     printf("---\n%s%d / %d tests passed.\n", (testCount == passedCount) ? "[PASS]: " : "[FAIL]: ", passedCount, testCount);
 }
+/* END c89thread_test.c */
 
 
 
