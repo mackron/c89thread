@@ -30,7 +30,7 @@ void c89thread_test_init(c89thread_test* pTest, const char* name, c89thread_test
     pTest->name = name;
     pTest->proc = proc;
     pTest->pUserData = pUserData;
-    pTest->result = c89thrd_success;  /* Default to success */
+    pTest->result = c89thrd_success;
     pTest->pFirstChild = NULL;
     pTest->pNextSibling = NULL;
 
@@ -55,7 +55,7 @@ int c89thread_test_run(c89thread_test* pTest)
     }
 
     if (pTest->name != NULL && pTest->proc != NULL) {
-        printf("Running %s\n", pTest->name);
+        printf("Running Test: %s\n", pTest->name);
     }
 
     if (pTest->proc != NULL) {
