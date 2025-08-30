@@ -90,9 +90,6 @@ if(C89THREAD_BUILD_TESTS)
     target_link_libraries(c89thread_test PRIVATE c89thread)
     add_test(NAME c89thread_test COMMAND c89thread_test)
 
-    add_executable(c89thread_basic tests/c89thread_basic.c)
-    target_link_libraries(c89thread_basic PRIVATE c89thread)
-
     # sandbox. Don't add a test for this.
     #add_executable(c89thread_sandbox tests/c89thread_sandbox.c)
     #target_link_libraries(c89thread_sandbox PRIVATE c89thread)
