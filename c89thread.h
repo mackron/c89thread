@@ -227,7 +227,7 @@ typedef struct
 int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89thread_entry_exit_callbacks* pEntryExitCallbacks, const c89thread_allocation_callbacks* pAllocationCallbacks);
 int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg);
 int c89thrd_equal(c89thrd_t lhs, c89thrd_t rhs);
-c89thrd_t c89thrd_current(void);
+c89thrd_t c89thrd_current(void);    /* Don't pass this around to other threads. Instead, pass around the object that was returned from the original call to c89thrd_create[_ex](). */
 int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining);
 void c89thrd_yield(void);
 void c89thrd_exit(int res);
