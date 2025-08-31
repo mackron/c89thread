@@ -206,7 +206,11 @@ int c89timespec_cmp(struct timespec tsA, struct timespec tsB);
 /* BEG c89thread_types.h */
 /* c89thrd_t */
 #if defined(C89THREAD_WIN32)
-typedef c89thread_handle    c89thrd_t;  /* HANDLE, CreateThread() */
+typedef struct
+{
+    c89thread_handle handle;    /* HANDLE, CreateThread() */
+    c89thread_uint32 id;
+} c89thrd_t;
 #else
 typedef c89thread_pthread_t c89thrd_t;
 #endif
@@ -457,14 +461,14 @@ static unsigned long WINAPI c89thrd_start_win32(void* pUserData)
 int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89thread_entry_exit_callbacks* pEntryExitCallbacks, const c89thread_allocation_callbacks* pAllocationCallbacks)
 {
     HANDLE hThread;
+    DWORD threadID;
     c89thrd_start_data_win32* pData;    /* <-- Needs to be allocated on the heap to ensure the data doesn't get trashed before the thread is entered. */
-    DWORD threadID; /* Not used. Needed for passing into CreateThread(). Without this it'll fail on Windows 98. */
 
     if (thr == NULL) {
         return c89thrd_error;
     }
 
-    *thr = NULL;    /* Safety. */
+    memset(thr, 0, sizeof(*thr));
 
     if (func == NULL) {
         return c89thrd_error;
@@ -503,7 +507,8 @@ int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89
         return c89thrd_result_from_GetLastError();
     }
 
-    *thr = (c89thrd_t)hThread;
+    thr->handle = (c89thread_handle)hThread;
+    thr->id     = threadID;
 
     return c89thrd_success;
 }
@@ -515,24 +520,18 @@ int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
 
 int c89thrd_equal(c89thrd_t lhs, c89thrd_t rhs)
 {
-    /*
-    Annoyingly, GetThreadId() is not defined for Windows XP. Need to conditionally enable this. I'm
-    not sure how to do this any other way, so I'm falling back to a simple handle comparison. I don't
-    think this is right, though. If anybody has any suggestions, let me know.
-
-    TODO: In c89thrd_create_ex(), we're getting the thread ID from CreateThread() but not using it.
-    Could we make use of that? When GetThreadId() is not available, maybe fall back to that?
-    */
-#if defined(_WIN32_WINNT) && _WIN32_WINNT >= 0x0502
-    return GetThreadId((HANDLE)lhs) == GetThreadId((HANDLE)rhs);
-#else
-    return lhs == rhs;
-#endif
+    /* We just compare thread IDs. */
+    return lhs.id == rhs.id;
 }
 
 c89thrd_t c89thrd_current(void)
 {
-    return (c89thrd_t)GetCurrentThread();
+    c89thrd_t thr;
+
+    thr.handle = (c89thread_handle)GetCurrentThread();
+    thr.id     = GetCurrentThreadId();
+
+    return thr;
 }
 
 int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
@@ -676,7 +675,7 @@ int c89thrd_detach(c89thrd_t thr)
     */
     BOOL result;
 
-    result = CloseHandle((HANDLE)thr);
+    result = CloseHandle((HANDLE)thr.handle);
     if (!result) {
         return c89thrd_error;
     }
@@ -695,14 +694,14 @@ int c89thrd_join(c89thrd_t thr, int* res)
     */
 
     /* Wait for the thread. */
-    if (WaitForSingleObject((HANDLE)thr, INFINITE) == WAIT_FAILED) {
+    if (WaitForSingleObject((HANDLE)thr.handle, INFINITE) == WAIT_FAILED) {
         return c89thrd_error;   /* Wait failed. */
     }
 
     /* Retrieve the result code if required. */
     if (res != NULL) {
         DWORD exitCode;
-        if (GetExitCodeThread((HANDLE)thr, &exitCode) == FALSE) {
+        if (GetExitCodeThread((HANDLE)thr.handle, &exitCode) == FALSE) {
             return c89thrd_error;
         }
 
