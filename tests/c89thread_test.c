@@ -307,7 +307,7 @@ int c89thread_test_c89thrd_current(c89thread_test* pTest)
         return result;
     }
 
-    if (data.thread != thread) {
+    if (!c89thrd_equal(data.thread, thread)) {
         printf("%s: c89thrd_current() failed.\n", pTest->name);
         return c89thrd_error;
     }
