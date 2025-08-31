@@ -48,8 +48,33 @@ void c89thread_test_init(c89thread_test* pTest, const char* name, c89thread_test
     }
 }
 
+void c89thread_test_count(c89thread_test* pTest, int* pCount, int* pPassed)
+{
+    c89thread_test* pChild;
+
+    if (pTest == NULL) {
+        return;
+    }
+
+    *pCount += 1;
+
+    if (pTest->result == c89thrd_success) {
+        *pPassed += 1;
+    }
+
+    pChild = pTest->pFirstChild;
+    while (pChild != NULL) {
+        c89thread_test_count(pChild, pCount, pPassed);
+        pChild = pChild->pNextSibling;
+    }
+}
+
 int c89thread_test_run(c89thread_test* pTest)
 {
+    /* Start our counts at -1 to exclude the root test. */
+    int testCount = -1;
+    int passedCount = -1;
+
     if (pTest == NULL) {
         return c89thrd_error;
     }
@@ -78,7 +103,10 @@ int c89thread_test_run(c89thread_test* pTest)
         }
     }
 
-    return c89thrd_success;
+    /* Now count the number of failed tests and report success or failure depending on the result. */
+    c89thread_test_count(pTest, &testCount, &passedCount);
+
+    return (testCount == passedCount) ? c89thrd_success : c89thrd_error;
 }
 
 void c89thread_test_print_local_result(c89thread_test* pTest, int level)
@@ -123,27 +151,6 @@ void c89thread_test_print_result(c89thread_test* pTest, int level)
     pChild = pTest->pFirstChild;
     while (pChild != NULL) {
         c89thread_test_print_result(pChild, level);
-        pChild = pChild->pNextSibling;
-    }
-}
-
-void c89thread_test_count(c89thread_test* pTest, int* pCount, int* pPassed)
-{
-    c89thread_test* pChild;
-
-    if (pTest == NULL) {
-        return;
-    }
-
-    *pCount += 1;
-
-    if (pTest->result == c89thrd_success) {
-        *pPassed += 1;
-    }
-
-    pChild = pTest->pFirstChild;
-    while (pChild != NULL) {
-        c89thread_test_count(pChild, pCount, pPassed);
         pChild = pChild->pNextSibling;
     }
 }
