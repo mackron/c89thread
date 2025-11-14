@@ -1115,6 +1115,15 @@ static int c89thrd_result_from_errno(int e)
 }
 /* END c89thrd_result_from_errno.c */
 
+static int c89thrd_result_from_pthread(int e)
+{
+    if (e == 0) {
+        return c89thrd_success;
+    } else {
+        return c89thrd_result_from_errno(e);
+    }
+}
+
 typedef struct
 {
     c89thrd_start_t func;
@@ -1196,8 +1205,8 @@ int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89
         pData->usingCustomAllocator = 0;
     }
 
-    result = pthread_create(&thread, NULL, c89thrd_start_posix, pData);
-    if (result != 0) {
+    result = c89thrd_result_from_pthread(pthread_create(&thread, NULL, c89thrd_start_posix, pData));
+    if (result != c89thrd_success) {
         c89thread_free(pData, pAllocationCallbacks);
         return c89thrd_result_from_errno(errno);
     }
@@ -1229,12 +1238,12 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
     available. Otherwise we'll fallback to select() and use a similar algorithm to what we use with
     the Windows build. We need to keep in mind the requirement to handle signal interrupts.
     */
-    int result;
+    int presult;
 
 #if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 199309L
-    result = nanosleep(duration, remaining);
-    if (result != 0) {
-        if (result == EINTR) {
+    presult = nanosleep(duration, remaining);
+    if (presult != 0) {
+        if (presult == EINTR) {
             return c89thrd_signal;
         }
 
@@ -1258,8 +1267,8 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
     produce the remaining amount.
     */
     if (remaining != NULL) {
-        result = c89timespec_get(&tsBeg, TIME_UTC);
-        if (result == 0) {
+        presult = c89timespec_get(&tsBeg, TIME_UTC);
+        if (presult == 0) {
             return c89thrd_error;   /* Failed to retrieve the start time. */
         }
     }
@@ -1279,8 +1288,8 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
         }
     }
 
-    result = select(0, NULL, NULL, NULL, &tv);
-    if (result == 0) {
+    presult = select(0, NULL, NULL, NULL, &tv);
+    if (presult == 0) {
         if (remaining != NULL) {
             remaining->tv_sec  = 0;
             remaining->tv_nsec = 0;
@@ -1300,7 +1309,7 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
         }
     }
 
-    if (result == EINTR) {
+    if (presult == EINTR) {
         return c89thrd_signal;
     } else {
         return c89thrd_error;
@@ -1326,8 +1335,8 @@ int c89thrd_detach(c89thrd_t thr)
     The documentation for thrd_detach() explicitly says c89thrd_success if successful or c89thrd_error
     for any other error. Don't use c89thrd_result_from_errno() here.
     */
-    int result = pthread_detach(thr);
-    if (result != 0) {
+    int result = c89thrd_result_from_pthread(pthread_detach(thr));
+    if (result != c89thrd_success) {
         return c89thrd_error;
     }
 
@@ -1338,8 +1347,8 @@ int c89thrd_join(c89thrd_t thr, int* res)
 {
     /* Same rules apply here as thrd_detach() with respect to the return value. */
     void* retval;
-    int result = pthread_join(thr, &retval);
-    if (result != 0) {
+    int result = c89thrd_result_from_pthread(pthread_join(thr, &retval));
+    if (result != c89thrd_success) {
         return c89thrd_error;   
     }
 
@@ -1363,14 +1372,14 @@ int c89mtx_init(c89mtx_t* mutex, int type)
     #ifdef C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
     {
         /* Initialize the main mutex */
-        result = pthread_mutex_init(&mutex->mutex, NULL);
-        if (result != 0) {
+        result = c89thrd_result_from_pthread(pthread_mutex_init(&mutex->mutex, NULL));
+        if (result != c89thrd_success) {
             return c89thrd_error;
         }
         
         /* For recursive mutexes, we need the guard mutex and metadata */
         if ((type & c89mtx_recursive) != 0) {
-            if (pthread_mutex_init(&mutex->guard, NULL) != 0) {
+            if (c89thrd_result_from_pthread(pthread_mutex_init(&mutex->guard, NULL)) != c89thrd_success) {
                 pthread_mutex_destroy(&mutex->mutex);
                 return c89thrd_error;
             }
@@ -1394,10 +1403,10 @@ int c89mtx_init(c89mtx_t* mutex, int type)
             pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_NORMAL);     /* Will deadlock. Consistent with Win32. */
         }
 
-        result = pthread_mutex_init((pthread_mutex_t*)mutex, &attr);
+        result = c89thrd_result_from_pthread(pthread_mutex_init((pthread_mutex_t*)mutex, &attr));
         pthread_mutexattr_destroy(&attr);
 
-        if (result != 0) {
+        if (result != c89thrd_success) {
             return c89thrd_error;
         }
 
@@ -1442,8 +1451,8 @@ int c89mtx_lock(c89mtx_t* mutex)
 
         /* Optimized path for plain mutexes. */
         if ((mutex->type & c89mtx_recursive) == 0) {
-            result = pthread_mutex_lock(&mutex->mutex);
-            if (result != 0) {
+            result = c89thrd_result_from_pthread(pthread_mutex_lock(&mutex->mutex));
+            if (result != c89thrd_success) {
                 return c89thrd_error;
             }
 
@@ -1454,8 +1463,8 @@ int c89mtx_lock(c89mtx_t* mutex)
         currentThread = pthread_self();
         
         /* First, lock the guard mutex to safely access the metadata. */
-        result = pthread_mutex_lock(&mutex->guard);
-        if (result != 0) {
+        result = c89thrd_result_from_pthread(pthread_mutex_lock(&mutex->guard));
+        if (result != c89thrd_success) {
             return c89thrd_error;
         }
 
@@ -1469,14 +1478,14 @@ int c89mtx_lock(c89mtx_t* mutex)
         /* The guard mutex needs to be unlocked before locking the main mutex or else we'll deadlock. */
         pthread_mutex_unlock(&mutex->guard);
         
-        result = pthread_mutex_lock(&mutex->mutex);
-        if (result != 0) {
+        result = c89thrd_result_from_pthread(pthread_mutex_lock(&mutex->mutex));
+        if (result != c89thrd_success) {
             return c89thrd_error;
         }
         
         /* Update metadata. */
-        result = pthread_mutex_lock(&mutex->guard);
-        if (result != 0) {
+        result = c89thrd_result_from_pthread(pthread_mutex_lock(&mutex->guard));
+        if (result != c89thrd_success) {
             pthread_mutex_unlock(&mutex->mutex);
             return c89thrd_error;
         }
@@ -1490,8 +1499,8 @@ int c89mtx_lock(c89mtx_t* mutex)
     }
     #else
     {
-        result = pthread_mutex_lock((pthread_mutex_t*)mutex);
-        if (result != 0) {
+        result = c89thrd_result_from_pthread(pthread_mutex_lock((pthread_mutex_t*)mutex));
+        if (result != c89thrd_success) {
             return c89thrd_error;
         }
 
@@ -1510,7 +1519,7 @@ static int c89pthread_mutex_timedlock(pthread_mutex_t* mutex, const struct times
 {
     #if defined(__USE_XOPEN2K) && !defined(__APPLE__)
     {
-        return c89thrd_result_from_errno(pthread_mutex_timedlock((pthread_mutex_t*)mutex, time_point));
+        return c89thrd_result_from_pthread(pthread_mutex_timedlock((pthread_mutex_t*)mutex, time_point));
     }
     #else
     {
@@ -1529,13 +1538,13 @@ static int c89pthread_mutex_timedlock(pthread_mutex_t* mutex, const struct times
         }
 
         for (;;) {
-            result = pthread_mutex_trylock((pthread_mutex_t*)mutex);
-            if (result == EBUSY) {
+            result = c89thrd_result_from_pthread(pthread_mutex_trylock((pthread_mutex_t*)mutex));
+            if (result == c89thrd_busy) {
                 struct timespec tsNow;
                 c89timespec_get(&tsNow, TIME_UTC);
 
                 if (c89timespec_cmp(tsNow, *time_point) > 0) {
-                    result = ETIMEDOUT;
+                    result = c89thrd_timedout;
                     break;
                 } else {
                     /* Have not yet timed out. Need to wait a bit and then try again. */
@@ -1547,15 +1556,7 @@ static int c89pthread_mutex_timedlock(pthread_mutex_t* mutex, const struct times
             }
         }
 
-        if (result == 0) {
-            return c89thrd_success;
-        } else {
-            if (result == ETIMEDOUT) {
-                return c89thrd_timedout;
-            } else {
-                return c89thrd_error;
-            }
-        }
+        return result;
     }
     #endif
 }
@@ -1585,8 +1586,8 @@ int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
         currentThread = pthread_self();
         
         /* First, lock the guard mutex to safely access the metadata. */
-        result = pthread_mutex_lock(&mutex->guard);
-        if (result != 0) {
+        result = c89thrd_result_from_pthread(pthread_mutex_lock(&mutex->guard));
+        if (result != c89thrd_success) {
             return c89thrd_error;
         }
         
@@ -1606,7 +1607,7 @@ int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
         }
 
         /* Update metadata. */
-        if (pthread_mutex_lock(&mutex->guard) != 0) {
+        if (c89thrd_result_from_pthread(pthread_mutex_lock(&mutex->guard)) != c89thrd_success) {
             pthread_mutex_unlock(&mutex->mutex);
             return c89thrd_error;
         }
@@ -1641,24 +1642,15 @@ int c89mtx_trylock(c89mtx_t* mutex)
 
         /* Optimized path for plain mutexes. */
         if ((mutex->type & c89mtx_recursive) == 0) {
-            result = pthread_mutex_trylock(&mutex->mutex);
-            if (result != 0) {
-                if (result == EBUSY) {
-                    return c89thrd_busy;
-                }
-
-                return c89thrd_error;
-            }
-
-            return c89thrd_success;
+            return c89thrd_result_from_pthread(pthread_mutex_trylock(&mutex->mutex));
         }
 
         /* Getting here means it's a recursive mutex. */
         currentThread = pthread_self();
         
         /* Lock the guard mutex to safely access the metadata. */
-        result = pthread_mutex_lock(&mutex->guard);
-        if (result != 0) {
+        result = c89thrd_result_from_pthread(pthread_mutex_lock(&mutex->guard));
+        if (result != c89thrd_success) {
             return c89thrd_error;
         }
         
@@ -1672,9 +1664,9 @@ int c89mtx_trylock(c89mtx_t* mutex)
         /* The guard mutex needs to be unlocked before locking the main mutex or else we'll deadlock. */
         pthread_mutex_unlock(&mutex->guard);
         
-        result = pthread_mutex_trylock(&mutex->mutex);
-        if (result != 0) {
-            if (result == EBUSY) {
+        result = c89thrd_result_from_pthread(pthread_mutex_trylock(&mutex->mutex));
+        if (result != c89thrd_success) {
+            if (result == c89thrd_busy) {
                 return c89thrd_busy;
             }
 
@@ -1696,9 +1688,9 @@ int c89mtx_trylock(c89mtx_t* mutex)
     }
     #else
     {
-        result = pthread_mutex_trylock((pthread_mutex_t*)mutex);
-        if (result != 0) {
-            if (result == EBUSY) {
+        result = c89thrd_result_from_pthread(pthread_mutex_trylock((pthread_mutex_t*)mutex));
+        if (result != c89thrd_success) {
+            if (result == c89thrd_busy) {
                 return c89thrd_busy;
             }
 
@@ -1725,8 +1717,8 @@ int c89mtx_unlock(c89mtx_t* mutex)
 
         /* Optimized path for plain mutexes. */
         if ((mutex->type & c89mtx_recursive) == 0) {
-            result = pthread_mutex_unlock(&mutex->mutex);
-            if (result != 0) {
+            result = c89thrd_result_from_pthread(pthread_mutex_unlock(&mutex->mutex));
+            if (result != c89thrd_success) {
                 return c89thrd_error;
             }
 
@@ -1737,8 +1729,8 @@ int c89mtx_unlock(c89mtx_t* mutex)
         currentThread = pthread_self();
         
         /* Lock the guard mutex to safely access the metadata */
-        result = pthread_mutex_lock(&mutex->guard);
-        if (result != 0) {
+        result = c89thrd_result_from_pthread(pthread_mutex_lock(&mutex->guard));
+        if (result != c89thrd_success) {
             return c89thrd_error;
         }
         
@@ -1756,8 +1748,8 @@ int c89mtx_unlock(c89mtx_t* mutex)
             mutex->owner = 0;
             pthread_mutex_unlock(&mutex->guard);
 
-            result = pthread_mutex_unlock(&mutex->mutex);
-            if (result != 0) {
+            result = c89thrd_result_from_pthread(pthread_mutex_unlock(&mutex->mutex));
+            if (result != c89thrd_success) {
                 return c89thrd_error;
             }
         } else {
@@ -1769,8 +1761,8 @@ int c89mtx_unlock(c89mtx_t* mutex)
     }
     #else
     {
-        result = pthread_mutex_unlock((pthread_mutex_t*)mutex);
-        if (result != 0) {
+        result = c89thrd_result_from_pthread(pthread_mutex_unlock((pthread_mutex_t*)mutex));
+        if (result != c89thrd_success) {
             return c89thrd_error;
         }
 
@@ -1790,8 +1782,8 @@ int c89cnd_init(c89cnd_t* cnd)
         return c89thrd_error;
     }
 
-    result = pthread_cond_init((pthread_cond_t*)cnd, NULL);
-    if (result != 0) {
+    result = c89thrd_result_from_pthread(pthread_cond_init((pthread_cond_t*)cnd, NULL));
+    if (result != c89thrd_success) {
         return c89thrd_error;
     }
 
@@ -1815,8 +1807,8 @@ int c89cnd_signal(c89cnd_t* cnd)
         return c89thrd_error;
     }
 
-    result = pthread_cond_signal((pthread_cond_t*)cnd);
-    if (result != 0) {
+    result = c89thrd_result_from_pthread(pthread_cond_signal((pthread_cond_t*)cnd));
+    if (result != c89thrd_success) {
         return c89thrd_error;
     }
 
@@ -1831,8 +1823,8 @@ int c89cnd_broadcast(c89cnd_t* cnd)
         return c89thrd_error;
     }
 
-    result = pthread_cond_broadcast((pthread_cond_t*)cnd);
-    if (result != 0) {
+    result = c89thrd_result_from_pthread(pthread_cond_broadcast((pthread_cond_t*)cnd));
+    if (result != c89thrd_success) {
         return c89thrd_error;
     }
 
@@ -1847,8 +1839,8 @@ int c89cnd_wait(c89cnd_t* cnd, c89mtx_t* mtx)
         return c89thrd_error;
     }
 
-    result = pthread_cond_wait((pthread_cond_t*)cnd, (pthread_mutex_t*)mtx);
-    if (result != 0) {
+    result = c89thrd_result_from_pthread(pthread_cond_wait((pthread_cond_t*)cnd, (pthread_mutex_t*)mtx));
+    if (result != c89thrd_success) {
         return c89thrd_error;
     }
 
@@ -1863,9 +1855,9 @@ int c89cnd_timedwait(c89cnd_t* cnd, c89mtx_t* mtx, const struct timespec* time_p
         return c89thrd_error;
     }
 
-    result = pthread_cond_timedwait((pthread_cond_t*)cnd, (pthread_mutex_t*)mtx, time_point);
-    if (result != 0) {
-        if (result == ETIMEDOUT) {
+    result = c89thrd_result_from_pthread(pthread_cond_timedwait((pthread_cond_t*)cnd, (pthread_mutex_t*)mtx, time_point));
+    if (result != c89thrd_success) {
+        if (result == c89thrd_timedout) {
             return c89thrd_timedout;
         }
 
@@ -1888,15 +1880,15 @@ int c89sem_init(c89sem_t* sem, int value, int valueMax)
     sem->value    = value;
     sem->valueMax = valueMax;
 
-    result = pthread_mutex_init((pthread_mutex_t*)&sem->lock, NULL);
-    if (result != 0) {
-        return c89thrd_result_from_errno(result);  /* Failed to create mutex. */
+    result = c89thrd_result_from_pthread(pthread_mutex_init((pthread_mutex_t*)&sem->lock, NULL));
+    if (result != c89thrd_success) {
+        return result;
     }
 
-    result = pthread_cond_init((pthread_cond_t*)&sem->cond, NULL);
-    if (result != 0) {
+    result = c89thrd_result_from_pthread(pthread_cond_init((pthread_cond_t*)&sem->cond, NULL));
+    if (result != c89thrd_success) {
         pthread_mutex_destroy((pthread_mutex_t*)&sem->lock);
-        return c89thrd_result_from_errno(result);  /* Failed to create condition variable. */
+        return result;  /* Failed to create condition variable. */
     }
 
     return c89thrd_success;
@@ -1920,8 +1912,8 @@ int c89sem_wait(c89sem_t* sem)
         return c89thrd_error;
     }
 
-    result = pthread_mutex_lock((pthread_mutex_t*)&sem->lock);
-    if (result != 0) {
+    result = c89thrd_result_from_pthread(pthread_mutex_lock((pthread_mutex_t*)&sem->lock));
+    if (result != c89thrd_success) {
         return c89thrd_error;
     }
 
@@ -1955,8 +1947,8 @@ int c89sem_timedwait(c89sem_t* sem, const struct timespec* time_point)
 
     /* We need to wait on a condition variable before escaping. We can't return from this function until the semaphore has been signaled. */
     while (sem->value == 0) {
-        result = pthread_cond_timedwait((pthread_cond_t*)&sem->cond, (pthread_mutex_t*)&sem->lock, time_point);
-        if (result == ETIMEDOUT) {
+        result = c89thrd_result_from_pthread(pthread_cond_timedwait((pthread_cond_t*)&sem->cond, (pthread_mutex_t*)&sem->lock, time_point));
+        if (result == c89thrd_timedout) {
             pthread_mutex_unlock((pthread_mutex_t*)&sem->lock);
             return c89thrd_timedout;
         }
@@ -1976,8 +1968,8 @@ int c89sem_post(c89sem_t* sem)
         return c89thrd_error;
     }
 
-    result = pthread_mutex_lock((pthread_mutex_t*)&sem->lock);
-    if (result != 0) {
+    result = c89thrd_result_from_pthread(pthread_mutex_lock((pthread_mutex_t*)&sem->lock));
+    if (result != c89thrd_success) {
         return c89thrd_error;
     }
 
@@ -2005,15 +1997,15 @@ int c89evnt_init(c89evnt_t* evnt)
 
     evnt->value = 0;
 
-    result = pthread_mutex_init((pthread_mutex_t*)&evnt->lock, NULL);
-    if (result != 0) {
-        return c89thrd_result_from_errno(result);  /* Failed to create mutex. */
+    result = c89thrd_result_from_pthread(pthread_mutex_init((pthread_mutex_t*)&evnt->lock, NULL));
+    if (result != c89thrd_success) {
+        return result;
     }
 
-    result = pthread_cond_init((pthread_cond_t*)&evnt->cond, NULL);
-    if (result != 0) {
+    result = c89thrd_result_from_pthread(pthread_cond_init((pthread_cond_t*)&evnt->cond, NULL));
+    if (result != c89thrd_success) {
         pthread_mutex_destroy((pthread_mutex_t*)&evnt->lock);
-        return c89thrd_result_from_errno(result);  /* Failed to create condition variable. */
+        return result;
     }
 
     return c89thrd_success;
@@ -2037,8 +2029,8 @@ int c89evnt_wait(c89evnt_t* evnt)
         return c89thrd_error;
     }
 
-    result = pthread_mutex_lock((pthread_mutex_t*)&evnt->lock);
-    if (result != 0) {
+    result = c89thrd_result_from_pthread(pthread_mutex_lock((pthread_mutex_t*)&evnt->lock));
+    if (result != c89thrd_success) {
         return c89thrd_error;
     }
 
@@ -2069,8 +2061,8 @@ int c89evnt_timedwait(c89evnt_t* evnt, const struct timespec* time_point)
     }
 
     while (evnt->value == 0) {
-        result = pthread_cond_timedwait((pthread_cond_t*)&evnt->cond, (pthread_mutex_t*)&evnt->lock, time_point);
-        if (result == ETIMEDOUT) {
+        result = c89thrd_result_from_pthread(pthread_cond_timedwait((pthread_cond_t*)&evnt->cond, (pthread_mutex_t*)&evnt->lock, time_point));
+        if (result == c89thrd_timedout) {
             pthread_mutex_unlock((pthread_mutex_t*)&evnt->lock);
             return c89thrd_timedout;
         }
@@ -2089,8 +2081,8 @@ int c89evnt_signal(c89evnt_t* evnt)
         return c89thrd_error;
     }
 
-    result = pthread_mutex_lock((pthread_mutex_t*)&evnt->lock);
-    if (result != 0) {
+    result = c89thrd_result_from_pthread(pthread_mutex_lock((pthread_mutex_t*)&evnt->lock));
+    if (result != c89thrd_success) {
         return c89thrd_error;
     }
 
