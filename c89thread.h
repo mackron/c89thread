@@ -1115,6 +1115,7 @@ static int c89thrd_result_from_errno(int e)
 }
 /* END c89thrd_result_from_errno.c */
 
+/* BEG c89thrd_result_from_pthread.c */
 static int c89thrd_result_from_pthread(int e)
 {
     if (e == 0) {
@@ -1123,6 +1124,7 @@ static int c89thrd_result_from_pthread(int e)
         return c89thrd_result_from_errno(e);
     }
 }
+/* END c89thrd_result_from_pthread.c */
 
 typedef struct
 {
