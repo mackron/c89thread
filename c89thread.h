@@ -1241,11 +1241,13 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
     the Windows build. We need to keep in mind the requirement to handle signal interrupts.
     */
     int presult;
+    int errorCode;
 
 #if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 199309L
     presult = nanosleep(duration, remaining);
+    errorCode = errno;
     if (presult != 0) {
-        if (presult == EINTR) {
+        if (errorCode == EINTR) {
             return c89thrd_signal;
         }
 
@@ -1291,6 +1293,7 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
     }
 
     presult = select(0, NULL, NULL, NULL, &tv);
+    errorCode = errno;
     if (presult == 0) {
         if (remaining != NULL) {
             remaining->tv_sec  = 0;
@@ -1303,7 +1306,13 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
     /* Getting here means didn't wait the whole time. We'll need to grab the diff. */
     if (remaining != NULL) {
         if (c89timespec_get(&tsEnd, TIME_UTC) != 0) {
-            *remaining = c89timespec_diff(tsEnd, tsBeg);
+            struct timespec elapsed = c89timespec_diff(tsEnd, tsBeg);
+            if (c89timespec_cmp(elapsed, *duration) < 0) {
+                *remaining = c89timespec_diff(*duration, elapsed);
+            } else {
+                remaining->tv_sec  = 0;
+                remaining->tv_nsec = 0;
+            }
         } else {
             /* Failed to get the end time, somehow. Shouldn't ever happen. */
             remaining->tv_sec  = 0;
@@ -1311,7 +1320,7 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
         }
     }
 
-    if (presult == EINTR) {
+    if (errorCode == EINTR) {
         return c89thrd_signal;
     } else {
         return c89thrd_error;
