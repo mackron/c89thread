@@ -1949,7 +1949,7 @@ int c89sem_timedwait(c89sem_t* sem, const struct timespec* time_point)
 
     result = c89pthread_mutex_timedlock((pthread_mutex_t*)&sem->lock, time_point);
     if (result != 0) {
-        if (result == ETIMEDOUT) {
+        if (result == c89thrd_timedout) {
             return c89thrd_timedout;
         }
 
@@ -2064,7 +2064,7 @@ int c89evnt_timedwait(c89evnt_t* evnt, const struct timespec* time_point)
 
     result = c89pthread_mutex_timedlock((pthread_mutex_t*)&evnt->lock, time_point);
     if (result != 0) {
-        if (result == ETIMEDOUT) {
+        if (result == c89thrd_timedout) {
             return c89thrd_timedout;
         }
 
