@@ -1153,7 +1153,7 @@ static void* c89thrd_start_posix(void* pUserData)
     arg  = pStartData->arg;
 
     /* We should free the data pointer before entering into the start function. That way when c89thrd_exit() is called we don't leak. */
-    c89thread_free(pStartData, (pStartData->usingCustomAllocator) ? NULL : &pStartData->allocationCallbacks);
+    c89thread_free(pStartData, (pStartData->usingCustomAllocator) ? &pStartData->allocationCallbacks : NULL);
 
     result = (void*)(c89thread_intptr)func(arg);
 
