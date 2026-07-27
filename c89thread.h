@@ -1803,6 +1803,63 @@ int c89mtx_unlock(c89mtx_t* mutex)
 
 
 /* BEG c89cnd_pthread.c */
+static int c89cnd_wait_pthread(c89cnd_t* cnd, c89mtx_t* mtx, const struct timespec* time_point)
+{
+    int result;
+    #ifdef C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
+    int recursionCount;
+    pthread_t currentThread;
+    #endif
+
+    #ifdef C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
+    {
+        recursionCount = 0;
+        currentThread = pthread_self();
+
+        if ((mtx->type & c89mtx_recursive) != 0) {
+            result = c89thrd_result_from_pthread(pthread_mutex_lock(&mtx->guard));
+            if (result != c89thrd_success) {
+                return c89thrd_error;
+            }
+
+            if (mtx->recursionCount == 0 || !pthread_equal(mtx->owner, currentThread)) {
+                pthread_mutex_unlock(&mtx->guard);
+                return c89thrd_error;
+            }
+
+            recursionCount = mtx->recursionCount;
+            mtx->owner = 0;
+            mtx->recursionCount = 0;
+
+            pthread_mutex_unlock(&mtx->guard);
+        }
+    }
+    #endif
+
+    if (time_point != NULL) {
+        result = c89thrd_result_from_pthread(pthread_cond_timedwait((pthread_cond_t*)cnd, (pthread_mutex_t*)mtx, time_point));
+    } else {
+        result = c89thrd_result_from_pthread(pthread_cond_wait((pthread_cond_t*)cnd, (pthread_mutex_t*)mtx));
+    }
+
+    #ifdef C89THREAD_USE_MANUAL_RECURSIVE_MUTEX
+    {
+        if ((mtx->type & c89mtx_recursive) != 0) {
+            if (c89thrd_result_from_pthread(pthread_mutex_lock(&mtx->guard)) != c89thrd_success) {
+                return c89thrd_error;
+            }
+
+            mtx->owner = currentThread;
+            mtx->recursionCount = recursionCount;
+
+            pthread_mutex_unlock(&mtx->guard);
+        }
+    }
+    #endif
+
+    return result;
+}
+
 int c89cnd_init(c89cnd_t* cnd)
 {
     int result;
@@ -1864,11 +1921,11 @@ int c89cnd_wait(c89cnd_t* cnd, c89mtx_t* mtx)
 {
     int result;
 
-    if (cnd == NULL) {
+    if (cnd == NULL || mtx == NULL) {
         return c89thrd_error;
     }
 
-    result = c89thrd_result_from_pthread(pthread_cond_wait((pthread_cond_t*)cnd, (pthread_mutex_t*)mtx));
+    result = c89cnd_wait_pthread(cnd, mtx, NULL);
     if (result != c89thrd_success) {
         return c89thrd_error;
     }
@@ -1880,11 +1937,11 @@ int c89cnd_timedwait(c89cnd_t* cnd, c89mtx_t* mtx, const struct timespec* time_p
 {
     int result;
 
-    if (cnd == NULL) {
+    if (cnd == NULL || mtx == NULL || time_point == NULL) {
         return c89thrd_error;
     }
 
-    result = c89thrd_result_from_pthread(pthread_cond_timedwait((pthread_cond_t*)cnd, (pthread_mutex_t*)mtx, time_point));
+    result = c89cnd_wait_pthread(cnd, mtx, time_point);
     if (result != c89thrd_success) {
         if (result == c89thrd_timedout) {
             return c89thrd_timedout;

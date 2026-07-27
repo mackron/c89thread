@@ -1,4 +1,5 @@
 #define C89THREAD_IMPLEMENTATION
+/*#define C89THREAD_USE_MANUAL_RECURSIVE_MUTEX*/
 #include "c89thread.h"
 
 /* BEG c89thread_test.c */
