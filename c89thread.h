@@ -1286,8 +1286,8 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
     */
     if ((duration->tv_nsec % 1000) != 0) {
         tv.tv_usec += 1;
-        if (tv.tv_usec > 1000000) {
-            tv.tv_usec = 0;
+        if (tv.tv_usec >= 1000000) {
+            tv.tv_usec -= 1000000;
             tv.tv_sec += 1;
         }
     }
@@ -2253,7 +2253,7 @@ struct timespec c89timespec_diff(struct timespec lhs, struct timespec rhs)
 
     diff.tv_sec = lhs.tv_sec - rhs.tv_sec;
 
-    if (lhs.tv_nsec > rhs.tv_nsec) {
+    if (lhs.tv_nsec >= rhs.tv_nsec) {
         diff.tv_nsec = lhs.tv_nsec - rhs.tv_nsec;
     } else {
         diff.tv_nsec = lhs.tv_nsec + 1000000000 - rhs.tv_nsec;
