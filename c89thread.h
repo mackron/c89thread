@@ -961,12 +961,18 @@ int c89sem_wait(c89sem_t* sem)
 int c89sem_timedwait(c89sem_t* sem, const struct timespec* time_point)
 {
     DWORD result;
+    struct timespec tsNow;
 
-    if (sem == NULL) {
+    if (sem == NULL || time_point == NULL) {
         return c89thrd_error;
     }
 
-    result = WaitForSingleObject((HANDLE)*sem, (DWORD)c89timespec_diff_milliseconds(*time_point, c89timespec_now()));
+    tsNow = c89timespec_now();
+    if (c89timespec_cmp(tsNow, *time_point) > 0) {
+        return c89thrd_timedout;
+    }
+
+    result = WaitForSingleObject((HANDLE)*sem, (DWORD)c89timespec_diff_milliseconds(*time_point, tsNow));
     if (result != WAIT_OBJECT_0) {
         if (result == WAIT_TIMEOUT) {
             return c89thrd_timedout;
@@ -1044,12 +1050,18 @@ int c89evnt_wait(c89evnt_t* evnt)
 int c89evnt_timedwait(c89evnt_t* evnt, const struct timespec* time_point)
 {
     DWORD result;
+    struct timespec tsNow;
 
-    if (evnt == NULL) {
+    if (evnt == NULL || time_point == NULL) {
         return c89thrd_error;
     }
 
-    result = WaitForSingleObject((HANDLE)*evnt, (DWORD)c89timespec_diff_milliseconds(*time_point, c89timespec_now()));
+    tsNow = c89timespec_now();
+    if (c89timespec_cmp(tsNow, *time_point) > 0) {
+        return c89thrd_timedout;
+    }
+
+    result = WaitForSingleObject((HANDLE)*evnt, (DWORD)c89timespec_diff_milliseconds(*time_point, tsNow));
     if (result != WAIT_OBJECT_0) {
         if (result == WAIT_TIMEOUT) {
             return c89thrd_timedout;
