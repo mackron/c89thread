@@ -1417,17 +1417,23 @@ int c89mtx_init(c89mtx_t* mutex, int type)
     }
     #else
     {
-        pthread_mutexattr_t attr;   /* For specifying whether or not the mutex is recursive. */
-
-        pthread_mutexattr_init(&attr);
         if ((type & c89mtx_recursive) != 0) {
-            pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-        } else {
-            pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_NORMAL);     /* Will deadlock. Consistent with Win32. */
-        }
+            pthread_mutexattr_t attr;
 
-        result = c89thrd_result_from_pthread(pthread_mutex_init((pthread_mutex_t*)mutex, &attr));
-        pthread_mutexattr_destroy(&attr);
+            result = c89thrd_result_from_pthread(pthread_mutexattr_init(&attr));
+            if (result != c89thrd_success) {
+                return c89thrd_error;
+            }
+
+            result = c89thrd_result_from_pthread(pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE));
+            if (result == c89thrd_success) {
+                result = c89thrd_result_from_pthread(pthread_mutex_init((pthread_mutex_t*)mutex, &attr));
+            }
+
+            pthread_mutexattr_destroy(&attr);
+        } else {
+            result = c89thrd_result_from_pthread(pthread_mutex_init((pthread_mutex_t*)mutex, NULL));
+        }
 
         if (result != c89thrd_success) {
             return c89thrd_error;
