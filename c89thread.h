@@ -1210,7 +1210,7 @@ int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89
     result = c89thrd_result_from_pthread(pthread_create(&thread, NULL, c89thrd_start_posix, pData));
     if (result != c89thrd_success) {
         c89thread_free(pData, pAllocationCallbacks);
-        return c89thrd_result_from_errno(errno);
+        return result;
     }
 
     *thr = thread;
