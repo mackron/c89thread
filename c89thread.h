@@ -1959,7 +1959,7 @@ int c89sem_init(c89sem_t* sem, int value, int valueMax)
 {
     int result;
 
-    if (sem == NULL || valueMax == 0 || value > valueMax) {
+    if (sem == NULL || value < 0 || valueMax <= 0 || value > valueMax) {
         return c89thrd_error;
     }
 
