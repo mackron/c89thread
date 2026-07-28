@@ -2005,7 +2005,11 @@ int c89sem_wait(c89sem_t* sem)
 
     /* We need to wait on a condition variable before escaping. We can't return from this function until the semaphore has been signaled. */
     while (sem->value == 0) {
-        pthread_cond_wait((pthread_cond_t*)&sem->cond, (pthread_mutex_t*)&sem->lock);
+        result = c89thrd_result_from_pthread(pthread_cond_wait((pthread_cond_t*)&sem->cond, (pthread_mutex_t*)&sem->lock));
+        if (result != c89thrd_success) {
+            pthread_mutex_unlock((pthread_mutex_t*)&sem->lock);
+            return c89thrd_error;
+        }
     }
 
     sem->value -= 1;
@@ -2037,6 +2041,11 @@ int c89sem_timedwait(c89sem_t* sem, const struct timespec* time_point)
         if (result == c89thrd_timedout) {
             pthread_mutex_unlock((pthread_mutex_t*)&sem->lock);
             return c89thrd_timedout;
+        }
+
+        if (result != c89thrd_success) {
+            pthread_mutex_unlock((pthread_mutex_t*)&sem->lock);
+            return c89thrd_error;
         }
     }
 
@@ -2121,7 +2130,11 @@ int c89evnt_wait(c89evnt_t* evnt)
     }
 
     while (evnt->value == 0) {
-        pthread_cond_wait((pthread_cond_t*)&evnt->cond, (pthread_mutex_t*)&evnt->lock);
+        result = c89thrd_result_from_pthread(pthread_cond_wait((pthread_cond_t*)&evnt->cond, (pthread_mutex_t*)&evnt->lock));
+        if (result != c89thrd_success) {
+            pthread_mutex_unlock((pthread_mutex_t*)&evnt->lock);
+            return c89thrd_error;
+        }
     }
     evnt->value = 0;  /* Auto-reset. */
 
@@ -2151,6 +2164,11 @@ int c89evnt_timedwait(c89evnt_t* evnt, const struct timespec* time_point)
         if (result == c89thrd_timedout) {
             pthread_mutex_unlock((pthread_mutex_t*)&evnt->lock);
             return c89thrd_timedout;
+        }
+        
+        if (result != c89thrd_success) {
+            pthread_mutex_unlock((pthread_mutex_t*)&evnt->lock);
+            return c89thrd_error;
         }
     }
     evnt->value = 0;  /* Auto-reset. */
