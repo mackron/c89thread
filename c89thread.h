@@ -531,8 +531,9 @@ int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89
 
     hThread = CreateThread(NULL, 0, c89thrd_start_win32, pData, 0, &threadID);
     if (hThread == NULL) {
+        int result = c89thrd_result_from_GetLastError();
         c89thread_free(pData, pAllocationCallbacks);
-        return c89thrd_result_from_GetLastError();
+        return result;
     }
 
     thr->handle = (c89thread_handle)hThread;
