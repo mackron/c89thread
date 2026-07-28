@@ -429,14 +429,15 @@ static DWORD c89wait_for_single_object_until(HANDLE handle, const struct timespe
 
         tsNow = c89timespec_now();
         if (c89timespec_cmp(tsNow, *time_point) > 0) {
-            return WAIT_TIMEOUT;
-        }
-
-        timeoutMilliseconds = c89timespec_diff_milliseconds(*time_point, tsNow);
-        if (timeoutMilliseconds >= INFINITE) {
-            timeout = INFINITE - 1;
+            timeoutMilliseconds = 0;
+            timeout = 0;
         } else {
-            timeout = (DWORD)timeoutMilliseconds;
+            timeoutMilliseconds = c89timespec_diff_milliseconds(*time_point, tsNow);
+            if (timeoutMilliseconds >= INFINITE) {
+                timeout = INFINITE - 1;
+            } else {
+                timeout = (DWORD)timeoutMilliseconds;
+            }
         }
 
         result = WaitForSingleObject(handle, timeout);
