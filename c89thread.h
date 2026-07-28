@@ -591,7 +591,7 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
     DWORD sleepResult;
     c89thread_uint64 sleepMilliseconds;
 
-    if (duration == NULL) {
+    if (duration == NULL || duration->tv_sec < 0 || duration->tv_nsec < 0 || duration->tv_nsec >= 1000000000) {
         return c89thrd_error;
     }
 
