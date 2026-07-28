@@ -865,8 +865,11 @@ int c89mtx_trylock(c89mtx_t* mutex)
         ReleaseMutex((HANDLE)mutex->handle);
         return c89thrd_error;
     }
-    if (result != WAIT_OBJECT_0) {
+    if (result == WAIT_TIMEOUT) {
         return c89thrd_busy;
+    }
+    if (result != WAIT_OBJECT_0) {
+        return c89thrd_error;
     }
 
     return c89thrd_success;
