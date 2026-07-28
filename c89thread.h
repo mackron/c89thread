@@ -1612,7 +1612,10 @@ static int c89pthread_mutex_timedlock(pthread_mutex_t* mutex, const struct times
             result = c89thrd_result_from_pthread(pthread_mutex_trylock((pthread_mutex_t*)mutex));
             if (result == c89thrd_busy) {
                 struct timespec tsNow;
-                c89timespec_get(&tsNow, TIME_UTC);
+                if (c89timespec_get(&tsNow, TIME_UTC) == 0) {
+                    result = c89thrd_error;
+                    break;
+                }
 
                 if (c89timespec_cmp(tsNow, *time_point) > 0) {
                     result = c89thrd_timedout;
