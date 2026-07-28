@@ -813,6 +813,10 @@ int c89mtx_lock(c89mtx_t* mutex)
     }
 
     result = WaitForSingleObject((HANDLE)mutex->handle, INFINITE);
+    if (result == WAIT_ABANDONED) {
+        ReleaseMutex((HANDLE)mutex->handle);
+        return c89thrd_error;
+    }
     if (result != WAIT_OBJECT_0) {
         return c89thrd_error;
     }
@@ -836,6 +840,10 @@ int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
     }
 
     result = c89wait_for_single_object_until((HANDLE)mutex->handle, time_point);
+    if (result == WAIT_ABANDONED) {
+        ReleaseMutex((HANDLE)mutex->handle);
+        return c89thrd_error;
+    }
     if (result != WAIT_OBJECT_0) {
         if (result == WAIT_TIMEOUT) {
             return c89thrd_timedout;
@@ -858,6 +866,10 @@ int c89mtx_trylock(c89mtx_t* mutex)
     }
 
     result = WaitForSingleObject((HANDLE)mutex->handle, 0);
+    if (result == WAIT_ABANDONED) {
+        ReleaseMutex((HANDLE)mutex->handle);
+        return c89thrd_error;
+    }
     if (result != WAIT_OBJECT_0) {
         return c89thrd_busy;
     }
