@@ -402,21 +402,48 @@ static int c89thrd_result_from_GetLastError(void)
 }
 /* END c89thrd_result_from_GetLastError.c */
 
-static time_t c89timespec_to_milliseconds(const struct timespec ts)
+static c89thread_uint64 c89timespec_to_milliseconds(const struct timespec ts)
 {
-    LONGLONG milliseconds;
+    c89thread_uint64 milliseconds;
 
-    milliseconds = ((ts.tv_sec * 1000) + (ts.tv_nsec / 1000000));
+    milliseconds = (((c89thread_uint64)ts.tv_sec * 1000) + ((c89thread_uint64)ts.tv_nsec / 1000000));
     if ((ts.tv_nsec % 1000000) != 0) {
         milliseconds += 1; /* We truncated a sub-millisecond amount of time. Add an extra millisecond to meet the minimum duration requirement. */
     }
 
-    return (time_t)milliseconds;
+    return milliseconds;
 }
 
-static time_t c89timespec_diff_milliseconds(const struct timespec tsA, const struct timespec tsB)
+static c89thread_uint64 c89timespec_diff_milliseconds(const struct timespec tsA, const struct timespec tsB)
 {
-    return (unsigned int)c89timespec_to_milliseconds(c89timespec_diff(tsA, tsB));
+    return c89timespec_to_milliseconds(c89timespec_diff(tsA, tsB));
+}
+
+static DWORD c89wait_for_single_object_until(HANDLE handle, const struct timespec* time_point)
+{
+    for (;;) {
+        struct timespec tsNow;
+        c89thread_uint64 timeoutMilliseconds;
+        DWORD timeout;
+        DWORD result;
+
+        tsNow = c89timespec_now();
+        if (c89timespec_cmp(tsNow, *time_point) > 0) {
+            return WAIT_TIMEOUT;
+        }
+
+        timeoutMilliseconds = c89timespec_diff_milliseconds(*time_point, tsNow);
+        if (timeoutMilliseconds >= INFINITE) {
+            timeout = INFINITE - 1;
+        } else {
+            timeout = (DWORD)timeoutMilliseconds;
+        }
+
+        result = WaitForSingleObject(handle, timeout);
+        if (result != WAIT_TIMEOUT || timeoutMilliseconds < INFINITE) {
+            return result;
+        }
+    }
 }
 
 
@@ -560,7 +587,7 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
     static LARGE_INTEGER frequency;
     LARGE_INTEGER start;
     DWORD sleepResult;
-    DWORD sleepMilliseconds;
+    c89thread_uint64 sleepMilliseconds;
 
     if (duration == NULL) {
         return c89thrd_error;
@@ -581,7 +608,7 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
         }
     }
 
-    sleepMilliseconds = (DWORD)((duration->tv_sec * 1000) + (duration->tv_nsec / 1000000));
+    sleepMilliseconds = (((c89thread_uint64)duration->tv_sec * 1000) + ((c89thread_uint64)duration->tv_nsec / 1000000));
 
     /*
     A small, but important detail here. The C11 spec states that thrd_sleep() should sleep for a
@@ -594,7 +621,23 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
         sleepMilliseconds += 1; /* We truncated a sub-millisecond amount of time. Add an extra millisecond to meet the minimum duration requirement. */
     }
     
-    sleepResult = SleepEx(sleepMilliseconds, TRUE); /* <-- Make this sleep alertable so we can detect WAIT_IO_COMPLETION and return -1. */
+    for (;;) {
+        DWORD sleepChunk;
+
+        if (sleepMilliseconds >= INFINITE) {
+            sleepChunk = INFINITE - 1;
+        } else {
+            sleepChunk = (DWORD)sleepMilliseconds;
+        }
+
+        sleepResult = SleepEx(sleepChunk, TRUE); /* <-- Make this sleep alertable so we can detect WAIT_IO_COMPLETION and return -1. */
+        if (sleepResult != 0 || sleepMilliseconds <= sleepChunk) {
+            break;
+        }
+
+        sleepMilliseconds -= sleepChunk;
+    }
+
     if (sleepResult == 0) {
         if (remaining != NULL) {
             remaining->tv_sec  = 0;
@@ -792,7 +835,7 @@ int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
         return c89thrd_timedout;
     }
 
-    result = WaitForSingleObject((HANDLE)mutex->handle, (DWORD)c89timespec_diff_milliseconds(*time_point, tsNow));
+    result = c89wait_for_single_object_until((HANDLE)mutex->handle, time_point);
     if (result != WAIT_OBJECT_0) {
         if (result == WAIT_TIMEOUT) {
             return c89thrd_timedout;
@@ -972,7 +1015,7 @@ int c89sem_timedwait(c89sem_t* sem, const struct timespec* time_point)
         return c89thrd_timedout;
     }
 
-    result = WaitForSingleObject((HANDLE)*sem, (DWORD)c89timespec_diff_milliseconds(*time_point, tsNow));
+    result = c89wait_for_single_object_until((HANDLE)*sem, time_point);
     if (result != WAIT_OBJECT_0) {
         if (result == WAIT_TIMEOUT) {
             return c89thrd_timedout;
@@ -1061,7 +1104,7 @@ int c89evnt_timedwait(c89evnt_t* evnt, const struct timespec* time_point)
         return c89thrd_timedout;
     }
 
-    result = WaitForSingleObject((HANDLE)*evnt, (DWORD)c89timespec_diff_milliseconds(*time_point, tsNow));
+    result = c89wait_for_single_object_until((HANDLE)*evnt, time_point);
     if (result != WAIT_OBJECT_0) {
         if (result == WAIT_TIMEOUT) {
             return c89thrd_timedout;
@@ -2305,6 +2348,8 @@ struct timespec c89timespec_now(void)
 {
     struct timespec ts;
 
+    ts.tv_sec  = 0;
+    ts.tv_nsec = 0;
     c89timespec_get(&ts, TIME_UTC);
 
     return ts;
