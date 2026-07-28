@@ -828,15 +828,9 @@ int c89mtx_lock(c89mtx_t* mutex)
 int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
 {
     DWORD result;
-    struct timespec tsNow;
 
     if (mutex == NULL || time_point == NULL) {
         return c89thrd_error;
-    }
-
-    tsNow = c89timespec_now();
-    if (c89timespec_cmp(tsNow, *time_point) > 0) {
-        return c89thrd_timedout;
     }
 
     result = c89wait_for_single_object_until((HANDLE)mutex->handle, time_point);
@@ -1016,15 +1010,9 @@ int c89sem_wait(c89sem_t* sem)
 int c89sem_timedwait(c89sem_t* sem, const struct timespec* time_point)
 {
     DWORD result;
-    struct timespec tsNow;
 
     if (sem == NULL || time_point == NULL) {
         return c89thrd_error;
-    }
-
-    tsNow = c89timespec_now();
-    if (c89timespec_cmp(tsNow, *time_point) > 0) {
-        return c89thrd_timedout;
     }
 
     result = c89wait_for_single_object_until((HANDLE)*sem, time_point);
@@ -1105,15 +1093,9 @@ int c89evnt_wait(c89evnt_t* evnt)
 int c89evnt_timedwait(c89evnt_t* evnt, const struct timespec* time_point)
 {
     DWORD result;
-    struct timespec tsNow;
 
     if (evnt == NULL || time_point == NULL) {
         return c89thrd_error;
-    }
-
-    tsNow = c89timespec_now();
-    if (c89timespec_cmp(tsNow, *time_point) > 0) {
-        return c89thrd_timedout;
     }
 
     result = c89wait_for_single_object_until((HANDLE)*evnt, time_point);
