@@ -1276,8 +1276,6 @@ int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89
         return c89thrd_error;
     }
 
-    *thr = 0;   /* Safety. */
-
     if (func == NULL) {
         return c89thrd_error;
     }
@@ -1506,7 +1504,6 @@ int c89mtx_init(c89mtx_t* mutex, int type)
                 return c89thrd_error;
             }
 
-            mutex->owner = 0;  /* No owner initially. */
             mutex->recursionCount = 0;
         }
         
@@ -1875,8 +1872,7 @@ int c89mtx_unlock(c89mtx_t* mutex)
         mutex->recursionCount -= 1;
 
         if (mutex->recursionCount == 0) {
-            /* Last unlock. Clear ownership and unlock the main mutex. */
-            mutex->owner = 0;
+            /* Last unlock. Unlock the main mutex. */
             pthread_mutex_unlock(&mutex->guard);
 
             result = c89thrd_result_from_pthread(pthread_mutex_unlock(&mutex->mutex));
@@ -1930,7 +1926,6 @@ static int c89cnd_wait_pthread(c89cnd_t* cnd, c89mtx_t* mtx, const struct timesp
             }
 
             recursionCount = mtx->recursionCount;
-            mtx->owner = 0;
             mtx->recursionCount = 0;
 
             pthread_mutex_unlock(&mtx->guard);
