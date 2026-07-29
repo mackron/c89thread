@@ -222,11 +222,14 @@ typedef c89thread_pthread_t c89thrd_t;
 
 typedef int (* c89thrd_start_t)(void*);
 
+typedef void (* c89thrd_on_entry_t)(void*);
+typedef void (* c89thrd_on_exit_t )(void*);
+
 typedef struct
 {
     void* pUserData;
-    void (* onEntry)(void* pUserData);
-    void (* onExit)(void* pUserData);
+    c89thrd_on_entry_t onEntry;
+    c89thrd_on_exit_t onExit;
 } c89thread_entry_exit_callbacks;
 
 int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89thread_entry_exit_callbacks* pEntryExitCallbacks, const c89thread_allocation_callbacks* pAllocationCallbacks);
@@ -391,6 +394,24 @@ Implementation
 #define C89THREAD_FREE(p)           HeapFree(GetProcessHeap(), 0, (p))
 #endif
 
+static C89THREAD_THREAD_LOCAL c89thread_entry_exit_callbacks g_c89threadEntryExitCallbacks;
+
+static void c89thrd_run_exit_callback_win32(void)
+{
+    c89thrd_on_exit_t onExit;
+    void* pUserData;
+
+    onExit    = g_c89threadEntryExitCallbacks.onExit;
+    pUserData = g_c89threadEntryExitCallbacks.pUserData;
+
+    g_c89threadEntryExitCallbacks.onExit    = NULL;
+    g_c89threadEntryExitCallbacks.pUserData = NULL;
+
+    if (onExit != NULL) {
+        onExit(pUserData);
+    }
+}
+
 /* BEG c89thrd_result_from_GetLastError.c */
 static int c89thrd_result_from_GetLastError(void)
 {
@@ -477,15 +498,15 @@ static unsigned long WINAPI c89thrd_start_win32(void* pUserData)
     /* Free the start data before calling user code. */
     c89thread_free(pStartData, (pStartData->usingCustomAllocator) ? &pStartData->allocationCallbacks : NULL);
 
+    g_c89threadEntryExitCallbacks = entryExitCallbacks;
+
     if (entryExitCallbacks.onEntry != NULL) {
         entryExitCallbacks.onEntry(entryExitCallbacks.pUserData);
     }
 
     result = (unsigned long)func(arg);
 
-    if (entryExitCallbacks.onExit != NULL) {
-        entryExitCallbacks.onExit(entryExitCallbacks.pUserData);
-    }
+    c89thrd_run_exit_callback_win32();
 
     return result;
 }
@@ -711,6 +732,7 @@ void c89thrd_yield(void)
 
 void c89thrd_exit(int res)
 {
+    c89thrd_run_exit_callback_win32();
     ExitThread((DWORD)res);
 }
 
