@@ -175,6 +175,10 @@ typedef struct
     void  (* onFree)(void* p, void* pUserData);
 } c89thread_allocation_callbacks;
 
+/*
+When setting allocation callbacks, it is up to the caller to ensure mutual exclusion. Callbacks should be
+set once and then not changed.
+*/
 void c89thread_set_allocation_callbacks(const c89thread_allocation_callbacks* pCallbacks);
 void* c89thread_malloc(size_t sz, const c89thread_allocation_callbacks* pCallbacks);
 void* c89thread_realloc(void* p, size_t sz, const c89thread_allocation_callbacks* pCallbacks);
