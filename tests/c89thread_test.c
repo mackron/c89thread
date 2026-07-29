@@ -318,6 +318,13 @@ int c89thread_test_c89thrd_current(c89thread_test* pTest)
 /* END test_c89thrd_current */
 
 /* BEG test_c89thrd_exit */
+static void c89thread_test_c89thrd_exit__on_exit(void* pUserData)
+{
+    int* pOnExitCallCount = (int*)pUserData;
+
+    *pOnExitCallCount += 1;
+}
+
 static int c89thread_test_c89thrd_exit__entry(void* pUserData)
 {
     (void)pUserData;
@@ -327,12 +334,18 @@ static int c89thread_test_c89thrd_exit__entry(void* pUserData)
 
 int c89thread_test_c89thrd_exit(c89thread_test* pTest)
 {
+    c89thread_entry_exit_callbacks entryExitCallbacks;
     c89thrd_t thread;
+    int onExitCallCount = 0;
     int result;
 
-    result = c89thrd_create(&thread, c89thread_test_c89thrd_exit__entry, NULL);
+    entryExitCallbacks.pUserData = &onExitCallCount;
+    entryExitCallbacks.onEntry   = NULL;
+    entryExitCallbacks.onExit    = c89thread_test_c89thrd_exit__on_exit;
+
+    result = c89thrd_create_ex(&thread, c89thread_test_c89thrd_exit__entry, NULL, &entryExitCallbacks, NULL);
     if (result != c89thrd_success) {
-        printf("%s: c89thrd_create() failed.\n", pTest->name);
+        printf("%s: c89thrd_create_ex() failed.\n", pTest->name);
         return result;
     }
 
@@ -340,6 +353,11 @@ int c89thread_test_c89thrd_exit(c89thread_test* pTest)
     if (result != c89thrd_success) {
         printf("%s: c89thrd_join() failed.\n", pTest->name);
         return result;
+    }
+
+    if (onExitCallCount != 1) {
+        printf("%s: onExit callback was called %d times.\n", pTest->name, onExitCallCount);
+        return c89thrd_error;
     }
 
     return c89thrd_success;

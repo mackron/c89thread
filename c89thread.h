@@ -1175,6 +1175,24 @@ int c89evnt_signal(c89evnt_t* evnt)
 #define C89THREAD_FREE(p)           free(p)
 #endif
 
+static C89THREAD_THREAD_LOCAL c89thread_entry_exit_callbacks g_c89threadEntryExitCallbacks;
+
+static void c89thrd_run_exit_callback_posix(void)
+{
+    c89thrd_on_exit_t onExit;
+    void* pUserData;
+
+    onExit    = g_c89threadEntryExitCallbacks.onExit;
+    pUserData = g_c89threadEntryExitCallbacks.pUserData;
+
+    g_c89threadEntryExitCallbacks.onExit    = NULL;
+    g_c89threadEntryExitCallbacks.pUserData = NULL;
+
+    if (onExit != NULL) {
+        onExit(pUserData);
+    }
+}
+
 /* BEG c89thrd_result_from_errno.c */
 static int c89thrd_result_from_errno(int e)
 {
@@ -1228,15 +1246,15 @@ static void* c89thrd_start_posix(void* pUserData)
     /* Free the start data before calling user code. */
     c89thread_free(pStartData, (pStartData->usingCustomAllocator) ? &pStartData->allocationCallbacks : NULL);
 
+    g_c89threadEntryExitCallbacks = entryExitCallbacks;
+
     if (entryExitCallbacks.onEntry != NULL) {
         entryExitCallbacks.onEntry(entryExitCallbacks.pUserData);
     }
 
     result = (void*)(c89thread_intptr)func(arg);
 
-    if (entryExitCallbacks.onExit != NULL) {
-        entryExitCallbacks.onExit(entryExitCallbacks.pUserData);
-    }
+    c89thrd_run_exit_callback_posix();
 
     return result;
 }
@@ -1418,6 +1436,7 @@ void c89thrd_yield(void)
 
 void c89thrd_exit(int res)
 {
+    c89thrd_run_exit_callback_posix();
     pthread_exit((void*)(c89thread_intptr)res);
 }
 
