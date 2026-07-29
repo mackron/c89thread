@@ -379,6 +379,8 @@ Implementation
 
 **************************************************************************************************/
 #if defined(C89THREAD_IMPLEMENTATION)
+#ifndef c89thread_c
+#define c89thread_c
 
 /* BEG c89thread_types.c */
 /* Win32 */
@@ -2630,7 +2632,8 @@ void c89thread_free(void* p, const c89thread_allocation_callbacks* pAllocationCa
 }
 /* END c89thread_allocation_callbacks.c */
 
-#endif /* C89THREAD_IMPLEMENTATION */
+#endif  /* c89thread_c */
+#endif  /* C89THREAD_IMPLEMENTATION */
 
 /*
 This software is available as a choice of the following licenses. Choose
