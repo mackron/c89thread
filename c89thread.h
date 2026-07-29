@@ -2305,6 +2305,10 @@ struct timespec c89timespec_from_timeval(struct timeval* tv)
 
 int c89timespec_get(struct timespec* ts, int base)
 {
+    if (ts == NULL) {
+        return 0;
+    }
+
     /*
     This is annoying to get working on all compilers. Here's the hierarchy:
 
