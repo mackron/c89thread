@@ -1338,93 +1338,97 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
     int presult;
     int errorCode;
 
-#if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 199309L
-    presult = nanosleep(duration, remaining);
-    errorCode = errno;
-    if (presult != 0) {
+    #if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 199309L
+    {
+        presult = nanosleep(duration, remaining);
+        errorCode = errno;
+        if (presult != 0) {
+            if (errorCode == EINTR) {
+                return c89thrd_signal;
+            }
+
+            return c89thrd_error;    
+        }
+    }
+    #else
+    {
+        /*
+        We need to fall back to select(). We'll use c89timespec_get() to retrieve the time before and after
+        for the purpose of diffing.
+        */
+        struct timeval tv;
+        struct timespec tsBeg;
+        struct timespec tsEnd;
+
+        if (duration == NULL) {
+            return c89thrd_error;
+        }
+
+        /*
+        We need to grab the time before the wait. This will be diff'd with the time after waiting to
+        produce the remaining amount.
+        */
+        if (remaining != NULL) {
+            presult = c89timespec_get(&tsBeg, TIME_UTC);
+            if (presult == 0) {
+                return c89thrd_error;   /* Failed to retrieve the start time. */
+            }
+        }
+
+        tv.tv_sec  = duration->tv_sec;
+        tv.tv_usec = duration->tv_nsec / 1000;
+
+        /*
+        We need to sleep for the *minimum* of `duration`. Our nanoseconds-to-microseconds conversion
+        above may have truncated some nanoseconds, so we'll need to add a microsecond to compensate.
+        */
+        if ((duration->tv_nsec % 1000) != 0) {
+            tv.tv_usec += 1;
+            if (tv.tv_usec >= 1000000) {
+                tv.tv_usec -= 1000000;
+                tv.tv_sec += 1;
+            }
+        }
+
+        presult = select(0, NULL, NULL, NULL, &tv);
+        errorCode = errno;
+        if (presult == 0) {
+            if (remaining != NULL) {
+                remaining->tv_sec  = 0;
+                remaining->tv_nsec = 0;
+            }
+
+            return c89thrd_success;
+        }
+
+        /* Getting here means didn't wait the whole time. We'll need to grab the diff. */
+        if (remaining != NULL) {
+            if (c89timespec_get(&tsEnd, TIME_UTC) != 0) {
+                if (c89timespec_cmp(tsEnd, tsBeg) <= 0) {
+                    *remaining = *duration;
+                } else {
+                    struct timespec elapsed = c89timespec_diff(tsEnd, tsBeg);
+                    if (c89timespec_cmp(elapsed, *duration) < 0) {
+                        *remaining = c89timespec_diff(*duration, elapsed);
+                    } else {
+                        remaining->tv_sec  = 0;
+                        remaining->tv_nsec = 0;
+                    }
+                }
+            } else {
+                /* Failed to get the end time, somehow. Shouldn't ever happen. */
+                remaining->tv_sec  = 0;
+                remaining->tv_nsec = 0;
+            }
+        }
+
         if (errorCode == EINTR) {
             return c89thrd_signal;
-        }
-
-        return c89thrd_error;    
-    }
-#else
-    /*
-    We need to fall back to select(). We'll use c89timespec_get() to retrieve the time before and after
-    for the purpose of diffing.
-    */
-    struct timeval tv;
-    struct timespec tsBeg;
-    struct timespec tsEnd;
-
-    if (duration == NULL) {
-        return c89thrd_error;
-    }
-
-    /*
-    We need to grab the time before the wait. This will be diff'd with the time after waiting to
-    produce the remaining amount.
-    */
-    if (remaining != NULL) {
-        presult = c89timespec_get(&tsBeg, TIME_UTC);
-        if (presult == 0) {
-            return c89thrd_error;   /* Failed to retrieve the start time. */
-        }
-    }
-
-    tv.tv_sec  = duration->tv_sec;
-    tv.tv_usec = duration->tv_nsec / 1000;
-
-    /*
-    We need to sleep for the *minimum* of `duration`. Our nanoseconds-to-microseconds conversion
-    above may have truncated some nanoseconds, so we'll need to add a microsecond to compensate.
-    */
-    if ((duration->tv_nsec % 1000) != 0) {
-        tv.tv_usec += 1;
-        if (tv.tv_usec >= 1000000) {
-            tv.tv_usec -= 1000000;
-            tv.tv_sec += 1;
-        }
-    }
-
-    presult = select(0, NULL, NULL, NULL, &tv);
-    errorCode = errno;
-    if (presult == 0) {
-        if (remaining != NULL) {
-            remaining->tv_sec  = 0;
-            remaining->tv_nsec = 0;
-        }
-
-        return c89thrd_success;
-    }
-
-    /* Getting here means didn't wait the whole time. We'll need to grab the diff. */
-    if (remaining != NULL) {
-        if (c89timespec_get(&tsEnd, TIME_UTC) != 0) {
-            if (c89timespec_cmp(tsEnd, tsBeg) <= 0) {
-                *remaining = *duration;
-            } else {
-                struct timespec elapsed = c89timespec_diff(tsEnd, tsBeg);
-                if (c89timespec_cmp(elapsed, *duration) < 0) {
-                    *remaining = c89timespec_diff(*duration, elapsed);
-                } else {
-                    remaining->tv_sec  = 0;
-                    remaining->tv_nsec = 0;
-                }
-            }
         } else {
-            /* Failed to get the end time, somehow. Shouldn't ever happen. */
-            remaining->tv_sec  = 0;
-            remaining->tv_nsec = 0;
+            return c89thrd_error;
         }
     }
-
-    if (errorCode == EINTR) {
-        return c89thrd_signal;
-    } else {
-        return c89thrd_error;
-    }
-#endif
+    #endif
     
     return c89thrd_success;
 }
