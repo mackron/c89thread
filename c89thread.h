@@ -777,6 +777,7 @@ int c89thrd_join(c89thrd_t thr, int* res)
     if (res != NULL) {
         DWORD exitCode;
         if (GetExitCodeThread((HANDLE)thr.handle, &exitCode) == FALSE) {
+            c89thrd_detach(thr);
             return c89thrd_error;
         }
 
