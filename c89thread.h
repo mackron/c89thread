@@ -140,6 +140,11 @@ typedef void* c89thread_handle;
         typedef pthread_mutex_t   c89thread_pthread_mutex_t;
         typedef pthread_cond_t    c89thread_pthread_cond_t;
     #else
+        /*
+        If you have opted into not including pthread.h in the header section, you need to
+        accept that the sizes of the structures below may not be accurate. It is on you
+        to take this risk and no technical support will be offered.
+        */
         typedef c89thread_uintptr c89thread_pthread_t;
         typedef union             c89thread_pthread_mutex_t { char __data[40]; c89thread_uint64 __alignment; } c89thread_pthread_mutex_t;
         typedef union             c89thread_pthread_cond_t  { char __data[48]; c89thread_uint64 __alignment; } c89thread_pthread_cond_t;
