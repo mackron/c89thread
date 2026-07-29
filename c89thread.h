@@ -586,7 +586,7 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
     MinGW. We'll instead use Windows' high resolution performance counter which is supported back to
     Windows 2000.
     */
-    static LARGE_INTEGER frequency;
+    LARGE_INTEGER frequency;
     LARGE_INTEGER start;
     DWORD sleepResult;
     c89thread_uint64 sleepMilliseconds;
@@ -595,14 +595,12 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
         return c89thrd_error;
     }
 
+    frequency.QuadPart = 0;
     start.QuadPart = 0;
 
     if (remaining != NULL) {
-        if (frequency.QuadPart == 0) {
-            if (QueryPerformanceFrequency(&frequency) == FALSE) {
-                frequency.QuadPart = 0; /* Just to be sure... */
-                return c89thrd_error;
-            }
+        if (QueryPerformanceFrequency(&frequency) == FALSE) {
+            return c89thrd_error;
         }
 
         if (QueryPerformanceCounter(&start) == FALSE) {
