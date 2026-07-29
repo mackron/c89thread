@@ -1360,12 +1360,16 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
     /* Getting here means didn't wait the whole time. We'll need to grab the diff. */
     if (remaining != NULL) {
         if (c89timespec_get(&tsEnd, TIME_UTC) != 0) {
-            struct timespec elapsed = c89timespec_diff(tsEnd, tsBeg);
-            if (c89timespec_cmp(elapsed, *duration) < 0) {
-                *remaining = c89timespec_diff(*duration, elapsed);
+            if (c89timespec_cmp(tsEnd, tsBeg) <= 0) {
+                *remaining = *duration;
             } else {
-                remaining->tv_sec  = 0;
-                remaining->tv_nsec = 0;
+                struct timespec elapsed = c89timespec_diff(tsEnd, tsBeg);
+                if (c89timespec_cmp(elapsed, *duration) < 0) {
+                    *remaining = c89timespec_diff(*duration, elapsed);
+                } else {
+                    remaining->tv_sec  = 0;
+                    remaining->tv_nsec = 0;
+                }
             }
         } else {
             /* Failed to get the end time, somehow. Shouldn't ever happen. */
