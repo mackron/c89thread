@@ -471,16 +471,15 @@ static unsigned long WINAPI c89thrd_start_win32(void* pUserData)
     unsigned long result;
 
     entryExitCallbacks = pStartData->entryExitCallbacks;
-    if (entryExitCallbacks.onEntry != NULL) {
-        entryExitCallbacks.onEntry(entryExitCallbacks.pUserData);
-    }
-
-    /* Make sure we make a copy of the start data here. That way we can free pStartData straight away (it was allocated in c89thrd_create()). */
     func = pStartData->func;
     arg  = pStartData->arg;
 
-    /* We should free the data pointer before entering into the start function. That way when c89thrd_exit() is called we don't leak. */
+    /* Free the start data before calling user code. */
     c89thread_free(pStartData, (pStartData->usingCustomAllocator) ? &pStartData->allocationCallbacks : NULL);
+
+    if (entryExitCallbacks.onEntry != NULL) {
+        entryExitCallbacks.onEntry(entryExitCallbacks.pUserData);
+    }
 
     result = (unsigned long)func(arg);
 
@@ -1201,16 +1200,15 @@ static void* c89thrd_start_posix(void* pUserData)
     void* result;
 
     entryExitCallbacks = pStartData->entryExitCallbacks;
-    if (entryExitCallbacks.onEntry != NULL) {
-        entryExitCallbacks.onEntry(entryExitCallbacks.pUserData);
-    }
-
-    /* Make sure we make a copy of the start data here. That way we can free pStartData straight away (it was allocated in c89thrd_create()). */
     func = pStartData->func;
     arg  = pStartData->arg;
 
-    /* We should free the data pointer before entering into the start function. That way when c89thrd_exit() is called we don't leak. */
+    /* Free the start data before calling user code. */
     c89thread_free(pStartData, (pStartData->usingCustomAllocator) ? &pStartData->allocationCallbacks : NULL);
+
+    if (entryExitCallbacks.onEntry != NULL) {
+        entryExitCallbacks.onEntry(entryExitCallbacks.pUserData);
+    }
 
     result = (void*)(c89thread_intptr)func(arg);
 
