@@ -1637,7 +1637,7 @@ static int c89pthread_mutex_timedlock(pthread_mutex_t* mutex, const struct times
 
 int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
 {
-    if (mutex == NULL) {
+    if (mutex == NULL || time_point == NULL) {
         return c89thrd_error;
     }
 
@@ -2067,7 +2067,7 @@ int c89sem_timedwait(c89sem_t* sem, const struct timespec* time_point)
 {
     int result;
 
-    if (sem == NULL) {
+    if (sem == NULL || time_point == NULL) {
         return c89thrd_error;
     }
 
@@ -2191,7 +2191,7 @@ int c89evnt_timedwait(c89evnt_t* evnt, const struct timespec* time_point)
 {
     int result;
 
-    if (evnt == NULL) {
+    if (evnt == NULL || time_point == NULL) {
         return c89thrd_error;
     }
 
