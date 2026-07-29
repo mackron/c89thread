@@ -1248,6 +1248,7 @@ int c89evnt_signal(c89evnt_t* evnt)
 #include <pthread.h>
 #include <stdlib.h>     /* For malloc(), realloc(), free(). */
 #include <errno.h>      /* For errno_t. */
+#include <limits.h>     /* For INT_MAX. */
 #include <sys/time.h>   /* For timeval. */
 
 #ifndef C89THREAD_MALLOC
@@ -1675,6 +1676,11 @@ int c89mtx_lock(c89mtx_t* mutex)
 
         /* We can bomb out early if the current thread already owns this mutex. */
         if (mutex->recursionCount > 0 && pthread_equal(mutex->owner, currentThread)) {
+            if (mutex->recursionCount == INT_MAX) {
+                pthread_mutex_unlock(&mutex->guard);
+                return c89thrd_error;
+            }
+
             mutex->recursionCount += 1;
             pthread_mutex_unlock(&mutex->guard);
             return c89thrd_success;
@@ -1801,6 +1807,11 @@ int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
         
         /* We can bomb out early if the current thread already owns this mutex. */
         if (mutex->recursionCount > 0 && pthread_equal(mutex->owner, currentThread)) {
+            if (mutex->recursionCount == INT_MAX) {
+                pthread_mutex_unlock(&mutex->guard);
+                return c89thrd_error;
+            }
+
             mutex->recursionCount += 1;
             pthread_mutex_unlock(&mutex->guard);
             return c89thrd_success;
@@ -1864,6 +1875,11 @@ int c89mtx_trylock(c89mtx_t* mutex)
         
         /* We can bomb out early if the current thread already owns this mutex. */
         if (mutex->recursionCount > 0 && pthread_equal(mutex->owner, currentThread)) {
+            if (mutex->recursionCount == INT_MAX) {
+                pthread_mutex_unlock(&mutex->guard);
+                return c89thrd_error;
+            }
+
             mutex->recursionCount += 1;
             pthread_mutex_unlock(&mutex->guard);
             return c89thrd_success;
