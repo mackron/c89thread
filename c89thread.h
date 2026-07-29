@@ -388,6 +388,10 @@ Implementation
 #include <windows.h>
 #include <limits.h> /* For LONG_MAX */
 
+#ifndef C89THREAD_UINT64_MAX
+#define C89THREAD_UINT64_MAX (~(c89thread_uint64)0)
+#endif
+
 #ifndef C89THREAD_MALLOC
 #define C89THREAD_MALLOC(sz)        HeapAlloc(GetProcessHeap(), 0, (sz))
 #endif
@@ -449,6 +453,69 @@ static c89thread_uint64 c89timespec_to_milliseconds(const struct timespec ts)
 static c89thread_uint64 c89timespec_diff_milliseconds(const struct timespec tsA, const struct timespec tsB)
 {
     return c89timespec_to_milliseconds(c89timespec_diff(tsA, tsB));
+}
+
+/* Calculates `floor((multiplicand * multiplier) / divisor)` without overflow. */
+static int c89thread_mul_div_u64(c89thread_uint64 multiplicand, c89thread_uint64 multiplier, c89thread_uint64 divisor, c89thread_uint64* pResult)
+{
+    c89thread_uint64 whole;
+    c89thread_uint64 quotient;
+    c89thread_uint64 remainder;
+    c89thread_uint64 bit;
+
+    if (divisor == 0 || pResult == NULL) {
+        return 0;
+    }
+
+    *pResult = 0;
+
+    if (multiplier == 0) {
+        return 1;
+    }
+
+    whole = multiplicand / divisor;
+    if (whole > C89THREAD_UINT64_MAX / multiplier) {
+        return 0;
+    }
+
+    multiplicand %= divisor;
+    quotient = 0;
+    remainder = 0;
+    bit = 1;
+
+    while (bit <= multiplier / 2) {
+        bit <<= 1;
+    }
+
+    while (bit != 0) {
+        quotient <<= 1;
+
+        if (remainder >= divisor - remainder) {
+            remainder -= divisor - remainder;
+            quotient += 1;
+        } else {
+            remainder += remainder;
+        }
+
+        if ((multiplier & bit) != 0) {
+            if (remainder >= divisor - multiplicand) {
+                remainder -= divisor - multiplicand;
+                quotient += 1;
+            } else {
+                remainder += multiplicand;
+            }
+        }
+
+        bit >>= 1;
+    }
+
+    whole *= multiplier;
+    if (whole > C89THREAD_UINT64_MAX - quotient) {
+        return 0;
+    }
+
+    *pResult = whole + quotient;
+    return 1;
 }
 
 static DWORD c89wait_for_single_object_until(HANDLE handle, const struct timespec* time_point)
@@ -690,33 +757,36 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
             elapsed.QuadPart = end.QuadPart - start.QuadPart;
 
             /*
-            The remaining amount of time is the requested duration, minus the elapsed time. This section warrents an explanation.
-
-            The section below is converting between our performance counters and timespec structures. Just above we calculated the
-            amount of the time that has elapsed since sleeping. By subtracting the requested duration from the elapsed duration,
-            we'll be left with the remaining duration.
-
-            The first thing we do is convert the requested duration to a LARGE_INTEGER which will be based on the performance counter
-            frequency we retrieved earlier. The Windows high performance counters are based on seconds, so a counter divided by the
-            frequency will give you the representation in seconds. By multiplying the counter by 1000 before the division by the
-            frequency you'll have a result in milliseconds, etc.
-
-            Once the remainder has be calculated based on the high performance counters, it's converted to the timespec structure
-            which is just the reverse.
+            Convert the elapsed counter to a timespec, then subtract it from the requested duration.
+            Use overflow-safe integer arithmetic for the fractional second.
             */
             {
-                LARGE_INTEGER durationCounter;
-                LARGE_INTEGER remainingCounter;
+                struct timespec elapsedTime;
+                c89thread_uint64 elapsedNanoseconds;
+                LONGLONG elapsedSeconds;
 
-                durationCounter.QuadPart = ((duration->tv_sec * frequency.QuadPart) + ((duration->tv_nsec * frequency.QuadPart) / 1000000000));
-                if (durationCounter.QuadPart > elapsed.QuadPart) {
-                    remainingCounter.QuadPart = durationCounter.QuadPart - elapsed.QuadPart;
+                elapsedSeconds = elapsed.QuadPart / frequency.QuadPart;
+                if (elapsed.QuadPart < 0) {
+                    *remaining = *duration;
+                } else if (elapsedSeconds > (LONGLONG)duration->tv_sec) {
+                    remaining->tv_sec  = 0;
+                    remaining->tv_nsec = 0;
                 } else {
-                    remainingCounter.QuadPart = 0;   /* For safety. Ensures we don't go negative. */
-                }
+                    elapsedTime.tv_sec  = (time_t)elapsedSeconds;
+                    if (!c89thread_mul_div_u64((c89thread_uint64)(elapsed.QuadPart % frequency.QuadPart), 1000000000, (c89thread_uint64)frequency.QuadPart, &elapsedNanoseconds)) {
+                        remaining->tv_sec  = 0;
+                        remaining->tv_nsec = 0;
+                    } else {
+                        elapsedTime.tv_nsec = (long)elapsedNanoseconds;
 
-                remaining->tv_sec  = (time_t)((remainingCounter.QuadPart * 1)          / frequency.QuadPart);
-                remaining->tv_nsec =  (long)(((remainingCounter.QuadPart * 1000000000) / frequency.QuadPart) - (remaining->tv_sec * (LONGLONG)1000000000));
+                        if (c89timespec_cmp(elapsedTime, *duration) < 0) {
+                            *remaining = c89timespec_diff(*duration, elapsedTime);
+                        } else {
+                            remaining->tv_sec  = 0;
+                            remaining->tv_nsec = 0;
+                        }
+                    }
+                }
             }
         } else {
             remaining->tv_sec  = 0; /* Just for safety. */
