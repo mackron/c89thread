@@ -2660,7 +2660,7 @@ void c89thread_set_allocation_callbacks(const c89thread_allocation_callbacks* pA
     }
 }
 
-const c89thread_allocation_callbacks* c89thread_choose_allocation_callbacks(const c89thread_allocation_callbacks* pAllocationCallbacks)
+static const c89thread_allocation_callbacks* c89thread_choose_allocation_callbacks(const c89thread_allocation_callbacks* pAllocationCallbacks)
 {
     if (pAllocationCallbacks != NULL) {
         return pAllocationCallbacks;
