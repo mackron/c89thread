@@ -442,6 +442,11 @@ static c89thread_uint64 c89timespec_to_milliseconds(const struct timespec ts)
 {
     c89thread_uint64 milliseconds;
 
+    /*
+    A 64-bit time_t can technically overflow, but it would require a timeout of millions of years so
+    it's not worth addressing this. A 32-bit time_t cannot specify a value large enough to cause an
+    overflow.
+    */
     milliseconds = (((c89thread_uint64)ts.tv_sec * 1000) + ((c89thread_uint64)ts.tv_nsec / 1000000));
     if ((ts.tv_nsec % 1000000) != 0) {
         milliseconds += 1; /* We truncated a sub-millisecond amount of time. Add an extra millisecond to meet the minimum duration requirement. */
@@ -706,6 +711,11 @@ int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
         }
     }
 
+    /*
+    A 64-bit time_t can technically overflow, but it would require a timeout of millions of years so
+    it's not worth addressing this. A 32-bit time_t cannot specify a value large enough to cause an
+    overflow.
+    */
     sleepMilliseconds = (((c89thread_uint64)duration->tv_sec * 1000) + ((c89thread_uint64)duration->tv_nsec / 1000000));
 
     /*
