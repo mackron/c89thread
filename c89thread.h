@@ -109,6 +109,9 @@ typedef void* c89thread_handle;
 #if defined(_WIN32) && !defined(C89THREAD_USE_PTHREAD)
     /* Win32. Do *not* include windows.h here. It will be included in the implementation section. */
     #define C89THREAD_WIN32
+#elif defined(__MSDOS__) || defined(__DOS__) || defined(_DOS) || defined(MSDOS)
+    /* DOS. Assumes single threaded. All thread functions fail, synchronization primitives always immediately succeed. */
+    #define C89THREAD_DOS
 #else
     /* Using pthread */
     #define C89THREAD_POSIX
@@ -116,7 +119,9 @@ typedef void* c89thread_handle;
 
 
 /* BEG c89thread_thread_local.h */
-#if defined(__cplusplus) && __cplusplus >= 201103L
+#if defined(C89THREAD_DOS)
+    #define C89THREAD_THREAD_LOCAL
+#elif defined(__cplusplus) && __cplusplus >= 201103L
     #define C89THREAD_THREAD_LOCAL thread_local
 #elif defined(__GNUC__) || defined(__clang__) || defined(__TINYC__)
     #define C89THREAD_THREAD_LOCAL __thread
@@ -193,7 +198,7 @@ void  c89thread_free(void* p, const c89thread_allocation_callbacks* pCallbacks);
 #define TIME_UTC    1
 #endif
 
-#if (defined(_MSC_VER) && _MSC_VER < 1900) || defined(__DMC__)  /* 1900 = Visual Studio 2015 */
+#if (defined(_MSC_VER) && _MSC_VER < 1900) || defined(__DMC__) || defined(C89THREAD_DOS)  /* 1900 = Visual Studio 2015 */
 struct timespec
 {
     time_t tv_sec;
@@ -220,6 +225,8 @@ typedef struct
     c89thread_handle handle;    /* HANDLE, CreateThread() */
     c89thread_uint32 id;
 } c89thrd_t;
+#elif defined(C89THREAD_DOS)
+typedef int c89thrd_t;
 #else
 typedef c89thread_pthread_t c89thrd_t;
 #endif
@@ -254,6 +261,8 @@ int c89thrd_join(c89thrd_t thr, int* res);
         c89thread_handle handle;    /* HANDLE, CreateMutex(), CreateEvent() */
         int type;
     } c89mtx_t;
+#elif defined(C89THREAD_DOS)
+    typedef int c89mtx_t;
 #else
     /*
     We may need to force the use of a manual recursive mutex which will happen when compiling
@@ -303,7 +312,9 @@ int c89mtx_unlock(c89mtx_t* mutex);
 /* c89cnd_t */
 #if defined(C89THREAD_WIN32)
 /* Not implemented. */
-typedef void*                    c89cnd_t;
+typedef void* c89cnd_t;
+#elif defined(C89THREAD_DOS)
+typedef int c89cnd_t;
 #else
 typedef c89thread_pthread_cond_t c89cnd_t;
 #endif
@@ -324,8 +335,10 @@ typedef struct
 {
     int value;
     int valueMax;
+    #if defined(C89THREAD_POSIX)
     c89thread_pthread_mutex_t lock;
     c89thread_pthread_cond_t cond;
+    #endif
 } c89sem_t;
 #endif
 
@@ -343,8 +356,10 @@ typedef c89thread_handle c89evnt_t;
 typedef struct
 {
     int value;
+    #if defined(C89THREAD_POSIX)
     c89thread_pthread_mutex_t lock;
     c89thread_pthread_cond_t cond;
+    #endif
 } c89evnt_t;
 #endif
 
@@ -1242,6 +1257,319 @@ int c89evnt_signal(c89evnt_t* evnt)
     return c89thrd_success;
 }
 #endif
+
+/* DOS (DJGPP) */
+#if defined(C89THREAD_DOS)
+#include <stdlib.h>
+#include <dos.h>
+#include <dpmi.h>
+#include <sys/time.h>
+
+/* DJGPP hides these declarations in strict ANSI and POSIX modes. */
+#if defined(__STRICT_ANSI__) || defined(_POSIX_SOURCE)
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
+struct timeval
+{
+    time_t tv_sec;
+    long tv_usec;
+};
+
+struct timezone;
+int gettimeofday(struct timeval* tv, struct timezone* tz);
+void delay(unsigned int milliseconds);
+void __dpmi_yield(void);
+
+#if defined(__cplusplus)
+}
+#endif
+#endif
+
+#ifndef C89THREAD_MALLOC
+#define C89THREAD_MALLOC(sz)        malloc(sz)
+#endif
+
+#ifndef C89THREAD_REALLOC
+#define C89THREAD_REALLOC(p, sz)    realloc(p, sz)
+#endif
+
+#ifndef C89THREAD_FREE
+#define C89THREAD_FREE(p)           free(p)
+#endif
+
+int c89thrd_create_ex(c89thrd_t* thr, c89thrd_start_t func, void* arg, const c89thread_entry_exit_callbacks* pEntryExitCallbacks, const c89thread_allocation_callbacks* pAllocationCallbacks)
+{
+    (void)func;
+    (void)arg;
+    (void)pEntryExitCallbacks;
+    (void)pAllocationCallbacks;
+
+    if (thr != NULL) {
+        *thr = 0;
+    }
+
+    return c89thrd_error;
+}
+
+int c89thrd_create(c89thrd_t* thr, c89thrd_start_t func, void* arg)
+{
+    return c89thrd_create_ex(thr, func, arg, NULL, NULL);
+}
+
+int c89thrd_equal(c89thrd_t lhs, c89thrd_t rhs)
+{
+    return lhs == rhs;
+}
+
+c89thrd_t c89thrd_current(void)
+{
+    return 1;
+}
+
+int c89thrd_sleep(const struct timespec* duration, struct timespec* remaining)
+{
+    unsigned int milliseconds;
+
+    if (duration == NULL) {
+        return c89thrd_error;
+    }
+
+    milliseconds = (unsigned int)(duration->tv_sec * 1000 + duration->tv_nsec / 1000000);
+    if ((duration->tv_nsec % 1000000) != 0) {
+        milliseconds += 1;
+    }
+
+    delay(milliseconds);
+
+    if (remaining != NULL) {
+        remaining->tv_sec  = 0;
+        remaining->tv_nsec = 0;
+    }
+
+    return c89thrd_success;
+}
+
+void c89thrd_yield(void)
+{
+    __dpmi_yield();
+}
+
+void c89thrd_exit(int res)
+{
+    exit(res);
+}
+
+int c89thrd_detach(c89thrd_t thr)
+{
+    (void)thr;
+
+    return c89thrd_error;
+}
+
+int c89thrd_join(c89thrd_t thr, int* res)
+{
+    (void)thr;
+    (void)res;
+
+    return c89thrd_error;
+}
+
+
+int c89mtx_init(c89mtx_t* mutex, int type)
+{
+    if (mutex == NULL || (type & ~(c89mtx_timed | c89mtx_recursive)) != 0) {
+        return c89thrd_error;
+    }
+
+    *mutex = type;
+
+    return c89thrd_success;
+}
+
+void c89mtx_destroy(c89mtx_t* mutex)
+{
+    (void)mutex;
+}
+
+int c89mtx_lock(c89mtx_t* mutex)
+{
+    if (mutex == NULL) {
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
+{
+    if (time_point == NULL || time_point->tv_nsec < 0 || time_point->tv_nsec >= 1000000000) {
+        return c89thrd_error;
+    }
+
+    return c89mtx_lock(mutex);
+}
+
+int c89mtx_trylock(c89mtx_t* mutex)
+{
+    return c89mtx_lock(mutex);
+}
+
+int c89mtx_unlock(c89mtx_t* mutex)
+{
+    if (mutex == NULL) {
+        return c89thrd_error;
+    }
+
+    return c89thrd_success;
+}
+
+
+int c89cnd_init(c89cnd_t* cnd)
+{
+    (void)cnd;
+
+    return c89thrd_error;
+}
+
+void c89cnd_destroy(c89cnd_t* cnd)
+{
+    (void)cnd;
+}
+
+int c89cnd_signal(c89cnd_t* cnd)
+{
+    (void)cnd;
+
+    return c89thrd_error;
+}
+
+int c89cnd_broadcast(c89cnd_t* cnd)
+{
+    (void)cnd;
+
+    return c89thrd_error;
+}
+
+int c89cnd_wait(c89cnd_t* cnd, c89mtx_t* mtx)
+{
+    (void)cnd;
+    (void)mtx;
+
+    return c89thrd_error;
+}
+
+int c89cnd_timedwait(c89cnd_t* cnd, c89mtx_t* mtx, const struct timespec* time_point)
+{
+    (void)cnd;
+    (void)mtx;
+    (void)time_point;
+
+    return c89thrd_error;
+}
+
+
+int c89sem_init(c89sem_t* sem, int value, int valueMax)
+{
+    if (sem == NULL || value < 0 || valueMax <= 0 || value > valueMax) {
+        return c89thrd_error;
+    }
+
+    sem->value    = value;
+    sem->valueMax = valueMax;
+
+    return c89thrd_success;
+}
+
+void c89sem_destroy(c89sem_t* sem)
+{
+    (void)sem;
+}
+
+int c89sem_wait(c89sem_t* sem)
+{
+    if (sem == NULL || sem->value == 0) {
+        return c89thrd_error;
+    }
+
+    sem->value -= 1;
+
+    return c89thrd_success;
+}
+
+int c89sem_timedwait(c89sem_t* sem, const struct timespec* time_point)
+{
+    if (time_point == NULL || time_point->tv_nsec < 0 || time_point->tv_nsec >= 1000000000) {
+        return c89thrd_error;
+    }
+
+    /* Blocking is unsupported, even when a deadline is supplied. */
+    return c89sem_wait(sem);
+}
+
+int c89sem_post(c89sem_t* sem)
+{
+    if (sem == NULL || sem->value == sem->valueMax) {
+        return c89thrd_error;
+    }
+
+    sem->value += 1;
+
+    return c89thrd_success;
+}
+
+
+int c89evnt_init(c89evnt_t* evnt)
+{
+    if (evnt == NULL) {
+        return c89thrd_error;
+    }
+
+    evnt->value = 0;
+
+    return c89thrd_success;
+}
+
+void c89evnt_destroy(c89evnt_t* evnt)
+{
+    (void)evnt;
+}
+
+int c89evnt_wait(c89evnt_t* evnt)
+{
+    if (evnt == NULL || evnt->value == 0) {
+        return c89thrd_error;
+    }
+
+    evnt->value = 0;
+
+    return c89thrd_success;
+}
+
+int c89evnt_timedwait(c89evnt_t* evnt, const struct timespec* time_point)
+{
+    if (time_point == NULL || time_point->tv_nsec < 0 || time_point->tv_nsec >= 1000000000) {
+        return c89thrd_error;
+    }
+
+    evnt->value = 0;
+
+    return c89thrd_success;
+}
+
+int c89evnt_signal(c89evnt_t* evnt)
+{
+    if (evnt == NULL) {
+        return c89thrd_error;
+    }
+
+    evnt->value = 1;
+
+    return c89thrd_success;
+}
+#endif
+
 
 /* POSIX */
 #if defined(C89THREAD_POSIX)
@@ -2438,6 +2766,24 @@ int c89timespec_get(struct timespec* ts, int base)
 
     return base;
 }
+#elif defined(C89THREAD_DOS)
+int c89timespec_get(struct timespec* ts, int base)
+{
+    struct timeval tv;
+
+    if (ts == NULL || base != TIME_UTC) {
+        return 0;
+    }
+
+    if (gettimeofday(&tv, NULL) != 0) {
+        return 0;
+    }
+
+    ts->tv_sec  = tv.tv_sec;
+    ts->tv_nsec = tv.tv_usec * 1000;
+
+    return base;
+}
 #else
 struct timespec c89timespec_from_timeval(struct timeval* tv)
 {
@@ -2593,7 +2939,7 @@ int c89timespec_cmp(struct timespec tsA, struct timespec tsB)
 
 
 /* BEG c89thread_cpu_count.c */
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(C89THREAD_DOS)
     #if defined(__APPLE__) && defined(__MACH__)
         #if !defined(_DARWIN_C_SOURCE) && (defined(_XOPEN_SOURCE) || defined(_POSIX_C_SOURCE))
         #define _DARWIN_C_SOURCE
@@ -2607,7 +2953,11 @@ int c89timespec_cmp(struct timespec tsA, struct timespec tsB)
 
 int c89thread_get_logical_cpu_count(void)
 {
-    #if defined(_WIN32)
+    #if defined(C89THREAD_DOS)
+    {
+        return 1;
+    }
+    #elif defined(_WIN32)
     {
         SYSTEM_INFO sysInfo;
         GetSystemInfo(&sysInfo);
