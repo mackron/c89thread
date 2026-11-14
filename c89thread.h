@@ -1377,6 +1377,7 @@ int c89thrd_join(c89thrd_t thr, int* res)
 }
 
 
+/* BEG c89mtx_dos.c */
 int c89mtx_init(c89mtx_t* mutex, int type)
 {
     if (mutex == NULL || (type & ~(c89mtx_timed | c89mtx_recursive)) != 0) {
@@ -1402,6 +1403,7 @@ int c89mtx_lock(c89mtx_t* mutex)
     return c89thrd_success;
 }
 
+/* BEG c89mtx_timedlock_dos.c */
 int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
 {
     if (time_point == NULL || time_point->tv_nsec < 0 || time_point->tv_nsec >= 1000000000) {
@@ -1410,11 +1412,14 @@ int c89mtx_timedlock(c89mtx_t* mutex, const struct timespec* time_point)
 
     return c89mtx_lock(mutex);
 }
+/* END c89mtx_timedlock_dos.c */
 
+/* BEG c89mtx_trylock_dos.c */
 int c89mtx_trylock(c89mtx_t* mutex)
 {
     return c89mtx_lock(mutex);
 }
+/* END c89mtx_trylock_dos.c */
 
 int c89mtx_unlock(c89mtx_t* mutex)
 {
@@ -1424,6 +1429,7 @@ int c89mtx_unlock(c89mtx_t* mutex)
 
     return c89thrd_success;
 }
+/* END c89mtx_dos.c */
 
 
 int c89cnd_init(c89cnd_t* cnd)
